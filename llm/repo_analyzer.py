@@ -80,7 +80,7 @@ Analyze this repository. Return ONLY the JSON object, no other text."""
         
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -145,7 +145,7 @@ Return ONLY the JSON object, no other text."""
 
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )

@@ -1,13 +1,23 @@
 import json
 import logging
 import sys
+import os
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone
 
 import openai
-from dd_internal_authentication.client import (
-    JWTDDToolAuthClientTokenManager, JWTInternalServiceAuthClientTokenManager)
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+
+# Try to import DD internal authentication if available
+try:
+    from dd_internal_authentication.client import (
+        JWTDDToolAuthClientTokenManager, JWTInternalServiceAuthClientTokenManager)
+    DD_AUTH_AVAILABLE = True
+except ImportError:
+    DD_AUTH_AVAILABLE = False
+    JWTDDToolAuthClientTokenManager = None
+    JWTInternalServiceAuthClientTokenManager = None
 
 from llm.function_instrumenter import FunctionInstrumenter
 from llm.pr_description_generator import PRDescriptionGenerator
@@ -16,6 +26,7 @@ from util.document_retriever import DocumentRetriever
 from util.github_client import GithubClient
 from util.repo_parser import RepoParser
 
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -26,45 +37,79 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger.info("✅ Environment variables loaded from .env file")
+except ImportError:
+    logger.info("📝 python-dotenv not installed, using system environment variables")
+
 app = FastAPI(
     title="DD Instrumenter Agent",
     description="A FastAPI server for the DD Instrumenter Agent",
     version="1.0.0"
 )
 
-local = True  # Switch based on environment
-if local:
-    token = JWTDDToolAuthClientTokenManager.instance(
-        name="rapid-ai-platform", datacenter="us1.staging.dog"
-    ).get_token("rapid-ai-platform")
-    host = "https://ai-gateway.us1.staging.dog"
-else:
-    token = (
-        JWTInternalServiceAuthClientTokenManager.instance(
-            name="rapid-ai-platform"
-        ).get_token("rapid-ai-platform"),
-    )
-    host = "http://ai-gateway.rapid-ai-platform.sidecar-proxy.fabric.dog.:15001"
+# Mount static files for frontend
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
-client = openai.OpenAI(
-    api_key=token,
-    base_url=f"{host}/v1",
-    default_headers={
-        "source": "dd-instrumenter-agent",
-        "org-id": "2",
-    },
-)
+# Initialize OpenAI client
+def get_openai_client():
+    """Get OpenAI client instance with proper authentication."""
+    if DD_AUTH_AVAILABLE:
+        try:
+            # Try to use DD internal authentication first
+            token = JWTDDToolAuthClientTokenManager.instance(
+                name="rapid-ai-platform", datacenter="us1.staging.dog"
+            ).get_token("rapid-ai-platform")
+            host = "https://ai-gateway.us1.staging.dog"
+            
+            client = openai.OpenAI(
+                api_key=token,
+                base_url=f"{host}/v1",
+                default_headers={
+                    "source": "dd-instrumenter-agent",
+                    "org-id": "2",
+                },
+            )
+            logger.info("🔑 DD internal authentication: YES")
+            return client
+        except Exception as e:
+            logger.warning(f"⚠️  DD internal authentication failed: {e}")
+    else:
+        logger.warning("⚠️  DD internal authentication not available - using OpenAI directly")
+    
+    # Fall back to OpenAI API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("⚠️  No OpenAI API key found. Some features will be disabled.")
+        return None
+    
+    logger.info("🔑 OpenAI API Key loaded: YES")
+    logger.info(f"🔑 API Key starts with: {api_key[:20]}...")
+    
+    return openai.OpenAI(api_key=api_key)
+
+# Initialize client
+client = get_openai_client()
 
 def get_repo_analyzer() -> RepoAnalyzer:
     """Dependency to get a configured RepoAnalyzer instance."""
+    if not client:
+        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
     return RepoAnalyzer(client)
 
 def get_function_instrumenter() -> FunctionInstrumenter:
     """Dependency to get a configured FunctionInstrumenter instance."""
+    if not client:
+        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
     return FunctionInstrumenter(client)
 
 def get_pr_description_generator() -> PRDescriptionGenerator:
     """Dependency to get a configured PRDescriptionGenerator instance."""
+    if not client:
+        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
     return PRDescriptionGenerator(client)
 
 def get_github_client() -> GithubClient:
@@ -78,12 +123,9 @@ def get_document_retriever() -> DocumentRetriever:
 @app.get("/")
 async def index():
     """
-    Root endpoint that returns a welcome message.
+    Serve the frontend HTML page.
     """
-    return {
-        "message": "Welcome to DD Instrumenter Agent API",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    return FileResponse("frontend/index.html")
 
 @app.get("/health")
 async def health_check():

@@ -70,7 +70,7 @@ Generate a professional PR description for these Datadog instrumentation changes
 
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )

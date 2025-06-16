@@ -72,7 +72,7 @@ Instrument this CDK code with Datadog:
 
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -119,8 +119,7 @@ For each Lambda function, you must:
 
 You must respond with ONLY a JSON object containing:
 {{
-    "modified_code": "the complete modified code with Datadog instrumentation",
-    "changes_made": ["list of specific changes made to each Lambda function"],
+    "file_changes": {{"{file_path}": "the complete modified code with Datadog instrumentation"}},
     "instrumentation_type": "datadog_lambda_instrumentation"
 }}
 
@@ -129,7 +128,7 @@ Instrument this Terraform code with Datadog:
 
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
