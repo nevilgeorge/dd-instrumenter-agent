@@ -1,19 +1,19 @@
 import os
+from typing import List, Dict, Any
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain.schema import Document
 
-class FileSystemUtils:
+class RepoParser:
     """
-    Utility class for reading and processing files and directories using LangChain.
-    Provides methods for loading documents from file systems and searching through them.
+    A class that encapsulates logic for parsing repository files using LangChain.
     """
 
-    def load_documents_from_directory(self, directory_path: str, glob_pattern: str = "**/*") -> List[Document]:
+    def read_repository_files(self, repo_path: str, glob_pattern: str = "**/*") -> List[Document]:
         """
-        Load files from a directory using LangChain's DirectoryLoader.
+        Read files from the repository using LangChain's DirectoryLoader.
 
         Args:
-            directory_path: Path to the directory to read
+            repo_path: Path to the repository directory
             glob_pattern: Pattern to match files (default: all files)
 
         Returns:
@@ -21,7 +21,7 @@ class FileSystemUtils:
         """
         try:
             loader = DirectoryLoader(
-                directory_path,
+                repo_path,
                 glob=glob_pattern,
                 loader_cls=TextLoader,
                 show_progress=True
@@ -29,7 +29,7 @@ class FileSystemUtils:
             documents = loader.load()
             return documents
         except Exception as e:
-            raise Exception(f"Failed to load documents from directory: {str(e)}")
+            raise Exception(f"Failed to read repository files: {str(e)}")
 
     def find_document_by_filename(self, documents: List[Document], filename: str) -> Document:
         """

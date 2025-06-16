@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 from github_client import GithubClient
-from filesystem_utils import FileSystemUtils
+from repo_parser import RepoParser
 from repo_analyzer import RepoAnalyzer
 from function_instrumenter import FunctionInstrumenter
 from pr_description_generator import PRDescriptionGenerator
@@ -26,7 +26,7 @@ llm = ChatOpenAI(
 
 # Initialize global instances
 github_client = GithubClient()
-fs_utils = FileSystemUtils()
+repo_parser = RepoParser()
 
 def get_repo_analyzer() -> RepoAnalyzer:
     """Dependency to get a configured RepoAnalyzer instance."""
@@ -82,15 +82,15 @@ async def read_repository(
         cloned_path = github_client.clone_repository(clone_url, target_dir="temp_clone")
 
         # Read repository contents
-        documents = fs_utils.load_documents_from_directory(cloned_path)
+        documents = repo_parser.read_repository_files(cloned_path)
         # Analyze repository type
         analysis = repo_analyzer.analyze_repo(documents)
         # Instrument the code with Datadog.
         if analysis.repo_type == "cdk":
-            cdk_script_file = fs_utils.find_document_by_filename(documents, analysis.cdk_script_file)
+            cdk_script_file = repo_parser.find_document_by_filename(documents, analysis.cdk_script_file)
             instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file.metadata['source'], cdk_script_file.page_content)
         elif analysis.repo_type == "terraform":
-            terraform_script_file = fs_utils.find_document_by_filename(documents, analysis.terraform_script_file)
+            terraform_script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
             instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
@@ -130,18 +130,18 @@ async def generate_pull_request(
         cloned_path = github_client.clone_repository(clone_url, target_dir="temp_clone")
 
         # Step 2: Analyze repository type
-        documents = fs_utils.load_documents_from_directory(cloned_path)
+        documents = repo_parser.read_repository_files(cloned_path)
         analysis = repo_analyzer.analyze_repo(documents)
 
         # Step 3: Instrument the code
         if analysis.repo_type == "cdk":
-            script_file = fs_utils.find_document_by_filename(documents, analysis.cdk_script_file)
+            script_file = repo_parser.find_document_by_filename(documents, analysis.cdk_script_file)
             instrumentation_result = function_instrumenter.instrument_cdk_file(
                 script_file.metadata['source'],
                 script_file.page_content
             )
         elif analysis.repo_type == "terraform":
-            script_file = fs_utils.find_document_by_filename(documents, analysis.terraform_script_file)
+            script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
             instrumentation_result = function_instrumenter.instrument_terraform_file(
                 script_file.metadata['source'],
                 script_file.page_content
