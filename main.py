@@ -1,3 +1,4 @@
+import sys
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
@@ -12,6 +13,17 @@ from dd_internal_authentication.client import (
     JWTInternalServiceAuthClientTokenManager,
     JWTDDToolAuthClientTokenManager,
 )
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="DD Instrumenter Agent",
@@ -106,11 +118,15 @@ async def instrument(
         if not clone_url:
             raise HTTPException(status_code=500, detail="Repository response did not contain a clone_url.")
 
+        logger.info(f"Cloning repository {clone_url}")
+
         # Add authentication to clone URL if token is available
         if github_client.token:
             clone_url = clone_url.replace('https://', f'https://{github_client.token}@')
 
         cloned_path = repo_parser.clone_repository(clone_url, target_dir="temp_clone")
+
+        logger.info(f"Cloned repository to {cloned_path}")
 
         # Read repository contents
         documents = repo_parser.read_repository_files(cloned_path)
@@ -124,6 +140,9 @@ async def instrument(
             terraform_script_file="",
             runtime="node.js"
         )
+
+        logger.info(f"Analyzed repository {analysis}")
+
         # Instrument the code with Datadog.
         if analysis.repo_type == "cdk":
             cdk_script_file = repo_parser.find_cdk_stack_file(documents, analysis.runtime)
@@ -134,6 +153,8 @@ async def instrument(
         #     instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
+
+        logger.info(f"Instrumented code {instrumented_code}")
 
         repo_parts = repository.split("/")
         if len(repo_parts) != 2:
@@ -148,6 +169,8 @@ async def instrument(
             instrumentation_result=instrumented_code,
             pr_generator=pr_generator
         )
+
+        logger.info(f"Pull request result {pr_result}")
 
         return {
             "repository": repo_details,

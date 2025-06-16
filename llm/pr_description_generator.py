@@ -66,17 +66,17 @@ Git diff:
 {git_diff}
 
 Generate a professional PR description for these Datadog instrumentation changes based on the actual diff."""
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="openai/gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
-            
+
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
-            
+
             self.logger.info("Successfully generated PR description from git diff")
             return PRDescription(**result_dict)
         except Exception as e:

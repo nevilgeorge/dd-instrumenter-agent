@@ -8,8 +8,7 @@ from util.document import Document
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
-    modified_code: str = Field(description="The complete modified code with Datadog instrumentation")
-    changes_made: List[str] = Field(description="List of specific changes made to each Lambda function")
+    file_changes: Dict[str, str] = Field(description="Map of file paths to their modified contents with Datadog instrumentation")
     instrumentation_type: Literal["datadog_lambda_instrumentation"] = Field(
         description="Type of instrumentation added",
         default="datadog_lambda_instrumentation"
@@ -17,25 +16,25 @@ class InstrumentationResult(BaseModel):
 
 class FunctionInstrumenter:
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
-    
+
     def __init__(self, client: openai.OpenAI):
         """
         Initialize the FunctionInstrumenter.
-        
+
         Args:
             client: OpenAI client instance for code analysis and modification
         """
         self.client = client
         self.logger = logging.getLogger(__name__)
-    
+
     def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection]) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
-        
+
         Args:
             cdk_script_file: Document containing CDK file content
             dd_documentation: Datadog documentation sections
-            
+
         Returns:
             InstrumentationResult containing the modified code and change information
         """
@@ -61,38 +60,37 @@ For each Lambda function, you must:
 
 You must respond with ONLY a JSON object containing:
 {{
-    "modified_code": "the complete modified code with Datadog instrumentation",
-    "changes_made": ["list of specific changes made to each Lambda function"],
+    "file_changes": {{"file_path": "new file content"}},
     "instrumentation_type": "datadog_lambda_instrumentation"
 }}
 
 Instrument this CDK code with Datadog:
 {cdk_script_file.page_content}"""
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="openai/gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
-            
+
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
-            
+
             self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
-    
+
     def instrument_terraform_file(self, file_path: str, code: str) -> InstrumentationResult:
         """
         Instrument a Terraform file with Datadog Lambda instrumentation.
-        
+
         Args:
             file_path: Path to the Terraform file
             code: Content of the Terraform file
-            
+
         Returns:
             InstrumentationResult containing the modified code and change information
         """
@@ -125,19 +123,19 @@ You must respond with ONLY a JSON object containing:
 
 Instrument this Terraform code with Datadog:
 {code}"""
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="openai/gpt-3.5-turbo",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
-            
+
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
-            
+
             self.logger.info(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting Terraform file {file_path}: {str(e)}")
-            raise 
+            raise

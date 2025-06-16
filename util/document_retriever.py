@@ -5,8 +5,6 @@ import logging
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
-logger = logging.getLogger(__name__)
-
 @dataclass
 class DocSection:
     """Represents a section of documentation with its content and metadata."""
@@ -30,6 +28,7 @@ class DocumentRetriever:
 
     def __init__(self):
         """Initialize the document retriever with default headers."""
+        self.logger = logging.getLogger(__name__)
         self.headers = {
             "User-Agent": "DD-Instrumenter-Agent/1.0",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -52,7 +51,7 @@ class DocumentRetriever:
             response.raise_for_status()
             return response.text
         except requests.RequestException as e:
-            logger.error(f"Failed to fetch documentation from {url}: {str(e)}")
+            self.logger.error(f"Failed to fetch documentation from {url}: {str(e)}")
             return None
 
     def _extract_main_content(self, soup: BeautifulSoup) -> Optional[DocSection]:
@@ -67,7 +66,7 @@ class DocumentRetriever:
         # Find the main content div
         main_content = soup.find('div', id='mainContent')
         if not main_content:
-            logger.warning("Could not find mainContent div")
+            self.logger.warning("Could not find mainContent div")
             return None
 
         # Get the title (first h1 in mainContent)
@@ -151,14 +150,14 @@ class DocumentRetriever:
         content = self._get_page_content(url)
 
         if not content:
-            logger.error("Failed to retrieve Lambda documentation")
+            self.logger.error("Failed to retrieve Lambda documentation")
             return {}
 
         soup = BeautifulSoup(content, 'html.parser')
         doc_section = self._extract_main_content(soup)
 
         if not doc_section:
-            logger.error("Failed to parse documentation content")
+            self.logger.error("Failed to parse documentation content")
             return {}
 
         return {"documentation": doc_section}

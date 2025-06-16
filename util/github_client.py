@@ -3,7 +3,7 @@ import os
 import time
 import subprocess
 import shutil
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from llm.pr_description_generator import PRDescriptionGenerator, PRDescription
 from llm.function_instrumenter import InstrumentationResult
 import logging
@@ -17,6 +17,7 @@ class GithubClient:
     """
     A client to interact with the Github API with authentication.
     """
+    BASE_URL = "https://api.github.com"
 
     def __init__(self, github_token: Optional[str] = None):
         """
@@ -27,6 +28,8 @@ class GithubClient:
                          If not provided, will try to get from GITHUB_TOKEN env var.
         """
         self.token = github_token or os.getenv("GITHUB_TOKEN")
+        self.logger = logging.getLogger(__name__)
+
         if not self.token:
             logger.warning("No GitHub token provided. API requests will be rate-limited.")
 
