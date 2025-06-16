@@ -74,3 +74,41 @@ class RepoParser:
             else:
                 raise Exception(f"Unsupported runtime: {runtime}")
         raise Exception("Could not find any CDK stack file (no file contains 'extends cdk.Stack')")
+
+    def find_terraform_file(self, documents: List[Document]) -> Document:
+        """
+        Find the main Terraform file by looking for files that contain Lambda function definitions.
+        :param documents: List[Document] List of Document objects to search through
+        :return: Document The matching Document object containing the Terraform configuration
+        :raises: Exception if no matching document is found
+        """
+        # First try to find main.tf as it's the conventional entry point
+        for doc in documents:
+            if doc.metadata['filename'] == 'main.tf':
+                return doc
+
+        # If main.tf not found, look for any .tf file containing Lambda function definitions
+        for doc in documents:
+            if doc.metadata['filename'].endswith('.tf'):
+                content = doc.page_content.lower()
+                # Look for common Lambda function indicators in Terraform
+                if any(indicator in content for indicator in [
+                    'resource "aws_lambda_function"',  # Most specific pattern
+                    'aws_lambda_function',  # Resource type
+                    'lambda_function',  # Variable/parameter name
+                    'lambda_layer',  # Lambda layer
+                    'aws_lambda_permission',  # Lambda permissions
+                    'aws_lambda_event_source_mapping',  # Event source mappings
+                    'aws_lambda_alias',  # Lambda aliases
+                    'aws_lambda_version'  # Lambda versions
+                ]):
+                    return doc
+
+        # If no Lambda-specific file found, look for any .tf file that might contain provider configuration
+        for doc in documents:
+            if doc.metadata['filename'].endswith('.tf'):
+                content = doc.page_content.lower()
+                if 'provider "aws"' in content or 'terraform {' in content:
+                    return doc
+
+        raise Exception("Could not find any Terraform file containing Lambda function definitions or AWS provider configuration")

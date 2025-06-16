@@ -23,7 +23,8 @@ async def instrument(
     repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer),
     function_instrumenter: FunctionInstrumenter = Depends(get_function_instrumenter),
     document_retriever: DocumentRetriever = Depends(get_document_retriever),
-    pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator)
+    pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator),
+    additional_context: str = ""
 ):
     """
     Endpoint that fetches repository details from Github's API, clones the repo,
@@ -51,10 +52,16 @@ async def instrument(
         if analysis.repo_type == "cdk":
             cdk_script_file = repo_parser.find_cdk_stack_file(documents, analysis.runtime)
             dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'cdk')
-            instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file, dd_documentation)
+            instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file, dd_documentation, additional_context)
         elif analysis.repo_type == "terraform":
-            terraform_script_file = None # TODO: Implement this
-            instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
+            terraform_script_file = repo_parser.find_terraform_file(documents, analysis.runtime)
+            dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'terraform')
+            instrumented_code = function_instrumenter.instrument_terraform_file(
+                terraform_script_file.metadata['source'],
+                terraform_script_file.page_content,
+                dd_documentation,
+                additional_context
+            )
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
 
