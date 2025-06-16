@@ -1,27 +1,135 @@
+// Authentication status
+let authStatus = { authenticated: false };
+
+// Check authentication status on page load
+async function checkAuthStatus() {
+    try {
+        const response = await fetch('/auth/status');
+        authStatus = await response.json();
+        updateAuthUI();
+    } catch (error) {
+        console.error('Error checking auth status:', error);
+    }
+}
+
+// Update authentication UI
+function updateAuthUI() {
+    const authSection = document.getElementById('authSection');
+    if (authStatus.authenticated) {
+        authSection.innerHTML = `
+            <div class="auth-status authenticated">
+                <span class="auth-icon">✅</span>
+                <span>Authenticated as <strong>${authStatus.username}</strong></span>
+                <button onclick="logout()" class="logout-btn">Logout</button>
+            </div>
+        `;
+    } else {
+        authSection.innerHTML = `
+            <div class="auth-status not-authenticated">
+                <span class="auth-icon">ℹ️</span>
+                <span>Not authenticated - only public repositories will work</span>
+            </div>
+        `;
+    }
+}
+
+// Logout function
+async function logout() {
+    try {
+        await fetch('/auth/logout', { method: 'POST' });
+        authStatus = { authenticated: false };
+        updateAuthUI();
+        showMessage('Successfully logged out', 'success');
+    } catch (error) {
+        console.error('Error logging out:', error);
+        showMessage('Error logging out', 'error');
+    }
+}
+
+// Show authentication flow
+function showAuthFlow(repository, authUrl) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = `
+        <div class="result auth-required">
+            <h3>🔒 Authentication Required</h3>
+            <p>You don't have access to the repository <strong>${repository}</strong>.</p>
+            <p>Please authenticate with GitHub to grant access:</p>
+            <div style="text-align: center; margin: 20px 0;">
+                <a href="${authUrl}" class="auth-btn">
+                    🔗 Authenticate with GitHub
+                </a>
+            </div>
+            <p class="auth-note" style="font-size: 14px; color: #666; text-align: center;">
+                This will redirect you to GitHub for secure authentication. 
+                You'll be redirected back here after authorization.
+            </p>
+        </div>
+    `;
+}
+
+// Show message function
+function showMessage(message, type) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = `
+        <div class="result ${type}">
+            <p>${message}</p>
+        </div>
+    `;
+}
+
+// Handle URL parameters (for OAuth callbacks)
+function handleUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const auth = urlParams.get('auth');
+    const repository = urlParams.get('repository');
+    const message = urlParams.get('message');
+    
+    if (auth === 'success') {
+        showMessage(`✅ Authentication successful! You can now instrument ${repository}`, 'success');
+        // Re-check auth status
+        checkAuthStatus();
+        // Clear URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (auth === 'error') {
+        showMessage(`❌ Authentication failed: ${message || 'Unknown error'}`, 'error');
+        // Clear URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+}
+
+// Clean repository URL to get owner/repo format
+function cleanRepositoryUrl(repository) {
+    let cleanRepo = repository.trim();
+    
+    // Handle different repository URL formats
+    if (cleanRepo.startsWith('https://github.com/')) {
+        cleanRepo = cleanRepo.replace('https://github.com/', '');
+    } else if (cleanRepo.startsWith('github.com/')) {
+        cleanRepo = cleanRepo.replace('github.com/', '');
+    }
+    
+    // Remove .git suffix if present
+    if (cleanRepo.endsWith('.git')) {
+        cleanRepo = cleanRepo.slice(0, -4);
+    }
+    
+    return cleanRepo;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('instrumentForm');
     const submitBtn = document.getElementById('submitBtn');
     const resultDiv = document.getElementById('result');
 
+    // Initialize authentication status
+    checkAuthStatus();
+    handleUrlParams();
+
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         
         const repository = document.getElementById('repository').value;
-        
-        // Clean up repository input
-        let cleanRepo = repository.trim();
-        
-        // Handle different repository URL formats
-        if (cleanRepo.startsWith('https://github.com/')) {
-            cleanRepo = cleanRepo.replace('https://github.com/', '');
-        } else if (cleanRepo.startsWith('github.com/')) {
-            cleanRepo = cleanRepo.replace('github.com/', '');
-        }
-        
-        // Remove .git suffix if present
-        if (cleanRepo.endsWith('.git')) {
-            cleanRepo = cleanRepo.slice(0, -4);
-        }
+        const cleanRepo = cleanRepositoryUrl(repository);
         
         // Show loading state
         submitBtn.disabled = true;
@@ -96,11 +204,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     resultDiv.appendChild(linkDiv);
                 }
                 
+            } else if (response.status === 403 && data.error === 'repository_access_denied') {
+                // Authentication required
+                showAuthFlow(cleanRepo, data.auth_url);
             } else {
-                // Error from API
+                // Other errors
                 resultDiv.innerHTML = `
                     <div class="result error">
-                        ❌ Error: ${data.detail || 'Unknown error occurred'}
+                        ❌ Error: ${data.detail || data.message || 'Unknown error occurred'}
                     </div>
                 `;
             }

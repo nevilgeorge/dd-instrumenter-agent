@@ -105,11 +105,65 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .auth-status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .auth-status.authenticated {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .auth-status.not-authenticated {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .auth-icon {
+            margin-right: 10px;
+        }
+        .logout-btn {
+            background: #dc3545;
+            padding: 8px 16px;
+            font-size: 14px;
+            width: auto;
+            margin: 0;
+        }
+        .logout-btn:hover {
+            background: #c82333;
+        }
+        .auth-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .auth-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        .auth-required {
+            text-align: center;
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎯 DD Instrumenter Agent</h1>
+        <div id="authSection"></div>
         <form id="instrumentForm">
             <div class="input-group">
                 <label for="repository">GitHub Repository:</label>

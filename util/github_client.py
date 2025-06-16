@@ -18,19 +18,21 @@ class GithubClient:
     A client to interact with the Github API with authentication.
     """
 
-    def __init__(self, github_token: Optional[str] = None):
+    def __init__(self, github_token: Optional[str] = None, access_token: Optional[str] = None):
         """
         Initialize the GithubClient with optional authentication.
 
         Args:
             github_token: Optional GitHub personal access token for authentication.
                          If not provided, will try to get from GITHUB_TOKEN env var.
+            access_token: Optional OAuth access token (takes precedence over github_token)
         """
-        self.token = github_token or os.getenv("GITHUB_TOKEN")
+        # Prioritize OAuth access token over personal access token
+        self.token = access_token or github_token or os.getenv("GITHUB_TOKEN")
         self.logger = logging.getLogger(__name__)
 
         if not self.token:
-            self.logger.warning("No GitHub token provided! Using unauthenticated Github client.")
+            self.logger.warning("No GitHub token provided. Public repositories will work with rate limits. Private repositories will require authentication.")
             self.github = Github()
         else:
             self.github = Github(self.token)
