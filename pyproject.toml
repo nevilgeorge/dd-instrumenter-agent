@@ -1,0 +1,24 @@
+[project]
+name = "dd-instrumenter-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.110.0",
+    "gitpython>=3.1.44",
+    "langchain==0.1.12",
+    "langchain-community==0.0.38",
+    "langchain-openai==0.0.8",
+    "openai==1.65.0",
+    "pydantic==2.6.3",
+    "pygithub>=2.6.1",
+    "requests==2.31.0",
+    "tiktoken==0.6.0",
+    "uvicorn==0.27.1",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+]
