@@ -5,6 +5,7 @@ from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 import logging
+from document_retriever import DocSection
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
@@ -109,7 +110,7 @@ class FunctionInstrumenter:
             verbose=True
         )
     
-    def instrument_cdk_file(self, file_path: str, code: str) -> InstrumentationResult:
+    def instrument_cdk_file(self, file_path: str, code: str, dd_documentation: Dict[str, DocSection]) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
         
