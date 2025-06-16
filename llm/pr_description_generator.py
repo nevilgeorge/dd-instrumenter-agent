@@ -5,6 +5,8 @@ from typing import Dict, List
 import openai
 from pydantic import BaseModel, Field
 
+from llm import BaseLLMClient
+
 
 class PRDescription(BaseModel):
     """Schema for PR description generation output."""
@@ -14,7 +16,7 @@ class PRDescription(BaseModel):
     summary: List[str] = Field(description="List of key changes made in bullet points")
 
 
-class PRDescriptionGenerator:
+class PRDescriptionGenerator(BaseLLMClient):
     """
     Class responsible for generating PR descriptions using LangChain and OpenAI.
     Analyzes file changes and creates professional pull request descriptions.
@@ -27,8 +29,7 @@ class PRDescriptionGenerator:
         Args:
             client: OpenAI client instance for PR description generation
         """
-        self.client = client
-        self.logger = logging.getLogger(__name__)
+        super().__init__(client)
 
     def generate_description_from_diff(self, git_diff: str, file_names: List[str]) -> PRDescription:
         """
@@ -67,24 +68,19 @@ Git diff:
 {git_diff}
 
 Generate a professional PR description for these Datadog instrumentation changes based on the actual diff."""
-
+        
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
             self.logger.debug("Successfully generated PR description from git diff")
+
             return PRDescription(**result_dict)
         except Exception as e:
             self.logger.error(f"Error generating PR description from diff: {str(e)}")
             # Fallback to a basic description
             return PRDescription(
-                title="Add Datadog instrumentation to Lambda functions",
+                title="Instrument with Datadog",
                 description="This PR adds Datadog monitoring and tracing instrumentation to AWS Lambda functions in the infrastructure code.",
                 summary=[
                     "Added Datadog Lambda Extension layer",

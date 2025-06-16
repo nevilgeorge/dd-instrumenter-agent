@@ -1,7 +1,6 @@
 import glob
 import os
-import subprocess
-from typing import Any, Dict, List
+from typing import List
 
 from util.document import Document
 

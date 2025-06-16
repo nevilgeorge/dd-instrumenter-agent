@@ -11,441 +11,203 @@ from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone
 import requests
 
-import openai
+from config import setup_logging, setup_openai_client
+from routers import health, instrument
 
-# Try to import DD internal authentication if available
-try:
-    from dd_internal_authentication.client import (
-        JWTDDToolAuthClientTokenManager, JWTInternalServiceAuthClientTokenManager)
-    DD_AUTH_AVAILABLE = True
-except ImportError:
-    DD_AUTH_AVAILABLE = False
-    JWTDDToolAuthClientTokenManager = None
-    JWTInternalServiceAuthClientTokenManager = None
 
-from llm.function_instrumenter import FunctionInstrumenter
-from llm.pr_description_generator import PRDescriptionGenerator
-from llm.repo_analyzer import RepoAnalyzer, RepoType
-from util.document_retriever import DocumentRetriever
-from util.github_client import GithubClient
-from util.repo_parser import RepoParser
+def create_app():
+    """Create and configure FastAPI application."""
+    logger = setup_logging()
+    client = setup_openai_client()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+    app = FastAPI(
+        title="DD Instrumenter Agent",
+        description="A FastAPI server for the DD Instrumenter Agent",
+        version="1.0.0"
+    )
 
-logger = logging.getLogger(__name__)
+    app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
-# Load environment variables
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    logger.info("✅ Environment variables loaded from .env file")
-except ImportError:
-    logger.info("📝 python-dotenv not installed, using system environment variables")
+    # Store dependencies in app state
+    app.state.openai_client = client
+    app.state.logger = logger
 
-# GitHub OAuth configuration
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
-GITHUB_OAUTH_REDIRECT_URI = os.getenv("GITHUB_OAUTH_REDIRECT_URI", "http://127.0.0.1:8000/auth/github/callback")
+    # GitHub OAuth configuration
+    GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
+    GITHUB_OAUTH_REDIRECT_URI = os.getenv("GITHUB_OAUTH_REDIRECT_URI", "http://127.0.0.1:8000/auth/github/callback")
 
-# In-memory session store (in production, use Redis or database)
-oauth_sessions = {}
-user_tokens = {}
+    # In-memory session store (in production, use Redis or database)
+    oauth_sessions = {}
+    user_tokens = {}
 
-app = FastAPI(
-    title="DD Instrumenter Agent",
-    description="A FastAPI server for the DD Instrumenter Agent",
-    version="1.0.0"
-)
-
-# Mount static files for frontend
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
-
-# Initialize OpenAI client
-def get_openai_client():
-    """Get OpenAI client instance with proper authentication."""
-    if DD_AUTH_AVAILABLE:
-        try:
-            # Try to use DD internal authentication first
-            token = JWTDDToolAuthClientTokenManager.instance(
-                name="rapid-ai-platform", datacenter="us1.staging.dog"
-            ).get_token("rapid-ai-platform")
-            host = "https://ai-gateway.us1.staging.dog"
-            
-            client = openai.OpenAI(
-                api_key=token,
-                base_url=f"{host}/v1",
-                default_headers={
-                    "source": "dd-instrumenter-agent",
-                    "org-id": "2",
-                },
-            )
-            logger.info("🔑 DD internal authentication: YES")
-            return client
-        except Exception as e:
-            logger.warning(f"⚠️  DD internal authentication failed: {e}")
-    else:
-        logger.warning("⚠️  DD internal authentication not available - using OpenAI directly")
-    
-    # Fall back to OpenAI API key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        logger.warning("⚠️  No OpenAI API key found. Some features will be disabled.")
+    def get_user_token(request: Request) -> Optional[str]:
+        """Extract user token from session/cookies."""
+        session_id = request.cookies.get("session_id")
+        logger.info(f"🔍 Session ID from cookie: {'YES' if session_id else 'NO'}")
+        if session_id:
+            logger.info(f"🔍 Session ID: {session_id[:10]}...")
+            logger.info(f"🔍 Token exists for session: {'YES' if session_id in user_tokens else 'NO'}")
+            if session_id in user_tokens:
+                token = user_tokens[session_id]
+                logger.info(f"🔍 Retrieved token starts with: {token[:10]}...")
+                return token
         return None
-    
-    logger.info("🔑 OpenAI API Key loaded: YES")
-    logger.info(f"🔑 API Key starts with: {api_key[:20]}...")
-    
-    return openai.OpenAI(api_key=api_key)
 
-# Initialize client
-client = get_openai_client()
+    @app.get("/")
+    async def index():
+        """Serve the frontend HTML page."""
+        return FileResponse("frontend/index.html")
 
-def get_repo_analyzer() -> RepoAnalyzer:
-    """Dependency to get a configured RepoAnalyzer instance."""
-    if not client:
-        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
-    return RepoAnalyzer(client)
+    @app.get("/auth/github")
+    async def github_auth(repository: str, response: Response):
+        """Initiate GitHub OAuth flow for accessing a specific repository."""
+        if not GITHUB_CLIENT_ID:
+            raise HTTPException(status_code=500, detail="GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.")
+        
+        # Generate a random state for CSRF protection
+        state = secrets.token_urlsafe(32)
+        session_id = secrets.token_urlsafe(32)
+        
+        # Store repository and state in session
+        oauth_sessions[state] = {
+            "repository": repository,
+            "session_id": session_id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Set session cookie
+        response.set_cookie("session_id", session_id, httponly=True, secure=False, samesite="lax")
+        
+        # Build GitHub OAuth URL
+        github_auth_url = (
+            f"https://github.com/login/oauth/authorize"
+            f"?client_id={GITHUB_CLIENT_ID}"
+            f"&redirect_uri={GITHUB_OAUTH_REDIRECT_URI}"
+            f"&scope=repo"
+            f"&state={state}"
+        )
+        
+        return RedirectResponse(url=github_auth_url)
 
-def get_function_instrumenter() -> FunctionInstrumenter:
-    """Dependency to get a configured FunctionInstrumenter instance."""
-    if not client:
-        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
-    return FunctionInstrumenter(client)
-
-def get_pr_description_generator() -> PRDescriptionGenerator:
-    """Dependency to get a configured PRDescriptionGenerator instance."""
-    if not client:
-        raise HTTPException(status_code=503, detail="OpenAI client not configured. Please set OPENAI_API_KEY environment variable.")
-    return PRDescriptionGenerator(client)
-
-def get_github_client(access_token: Optional[str] = None) -> GithubClient:
-    """Dependency to get a configured GithubClient instance."""
-    return GithubClient(access_token=access_token)
-
-def get_document_retriever() -> DocumentRetriever:
-    """Dependency to get a configured DocumentRetriever instance."""
-    return DocumentRetriever()
-
-def get_user_token(request: Request) -> Optional[str]:
-    """Extract user token from session/cookies."""
-    session_id = request.cookies.get("session_id")
-    logger.info(f"🔍 Session ID from cookie: {'YES' if session_id else 'NO'}")
-    if session_id:
-        logger.info(f"🔍 Session ID: {session_id[:10]}...")
-        logger.info(f"🔍 Token exists for session: {'YES' if session_id in user_tokens else 'NO'}")
-        if session_id in user_tokens:
-            token = user_tokens[session_id]
-            logger.info(f"🔍 Retrieved token starts with: {token[:10]}...")
-            return token
-    return None
-
-@app.get("/")
-async def index():
-    """
-    Serve the frontend HTML page.
-    """
-    return FileResponse("frontend/index.html")
-
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint that returns the server status.
-    """
-    return JSONResponse(
-        content={
-            "status": "healthy",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        },
-        status_code=200
-    )
-
-@app.get("/auth/github")
-async def github_auth(repository: str, response: Response):
-    """
-    Initiate GitHub OAuth flow for accessing a specific repository.
-    """
-    if not GITHUB_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.")
-    
-    # Generate a random state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    session_id = secrets.token_urlsafe(32)
-    
-    # Store repository and state in session
-    oauth_sessions[state] = {
-        "repository": repository,
-        "session_id": session_id,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    # Set session cookie
-    response.set_cookie("session_id", session_id, httponly=True, secure=False, samesite="lax")
-    
-    # Build GitHub OAuth URL
-    github_auth_url = (
-        f"https://github.com/login/oauth/authorize"
-        f"?client_id={GITHUB_CLIENT_ID}"
-        f"&redirect_uri={GITHUB_OAUTH_REDIRECT_URI}"
-        f"&scope=repo"
-        f"&state={state}"
-    )
-    
-    return RedirectResponse(url=github_auth_url)
-
-@app.get("/auth/github/callback")
-async def github_callback(code: str, state: str, response: Response):
-    """
-    Handle GitHub OAuth callback and exchange code for access token.
-    """
-    if not GITHUB_CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="GitHub OAuth not configured.")
-    
-    # Verify state to prevent CSRF
-    if state not in oauth_sessions:
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
-    
-    session_data = oauth_sessions[state]
-    repository = session_data["repository"]
-    session_id = session_data["session_id"]
-    
-    try:
-        # Exchange code for access token
-        token_response = requests.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            data={
+    @app.get("/auth/github/callback")
+    async def github_callback(code: str, state: str, response: Response):
+        """Handle GitHub OAuth callback and exchange code for access token."""
+        try:
+            # Verify state parameter
+            if state not in oauth_sessions:
+                raise HTTPException(status_code=400, detail="Invalid state parameter")
+            
+            session_data = oauth_sessions[state]
+            session_id = session_data["session_id"]
+            
+            # Exchange code for access token
+            token_url = "https://github.com/login/oauth/access_token"
+            token_data = {
                 "client_id": GITHUB_CLIENT_ID,
                 "client_secret": GITHUB_CLIENT_SECRET,
                 "code": code,
-                "redirect_uri": GITHUB_OAUTH_REDIRECT_URI,
+                "state": state
             }
-        )
-        
-        if token_response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to exchange code for token.")
-        
-        token_data = token_response.json()
-        access_token = token_data.get("access_token")
+            
+            token_response = requests.post(
+                token_url,
+                data=token_data,
+                headers={"Accept": "application/json"}
+            )
+            
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to exchange code for token")
+            
+            token_info = token_response.json()
+            access_token = token_info.get("access_token")
+            
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access token received")
+            
+            # Store the access token
+            user_tokens[session_id] = access_token
+            logger.info(f"🔍 Stored token for session: {session_id[:10]}...")
+            
+            # Clean up OAuth session
+            del oauth_sessions[state]
+            
+            # Create redirect response
+            redirect_response = RedirectResponse(url="/?auth=success")
+            
+            # Set the session cookie on the redirect response
+            redirect_response.set_cookie(
+                key="session_id",
+                value=session_id, 
+                httponly=True,
+                secure=False,  # Set to True in production with HTTPS
+                samesite="lax",
+                max_age=3600,  # 1 hour
+                path="/"  # Ensure cookie is available for all paths
+            )
+            logger.info(f"🔍 Setting session cookie: {session_id[:10]}... on redirect response")
+            
+            return redirect_response
+            
+        except Exception as e:
+            logger.error(f"❌ GitHub OAuth error: {e}")
+            # Clean up OAuth session
+            if state in oauth_sessions:
+                del oauth_sessions[state]
+            
+            return RedirectResponse(url=f"/?auth=error&message={str(e)}")
+
+    @app.get("/auth/status")
+    async def auth_status(request: Request):
+        """Check if user is authenticated and return their GitHub permissions status."""
+        access_token = get_user_token(request)
         
         if not access_token:
-            raise HTTPException(status_code=400, detail="No access token received from GitHub.")
-        
-        # Store the access token for this session
-        user_tokens[session_id] = access_token
-        logger.info(f"🔍 Stored token for session {session_id[:10]}...")
-        logger.info(f"🔍 Token starts with: {access_token[:10]}...")
-        logger.info(f"🔍 Total stored sessions: {len(user_tokens)}")
-        
-        # Clean up OAuth session
-        del oauth_sessions[state]
-        
-        logger.info(f"✅ GitHub OAuth successful for repository: {repository}")
-        
-        # ⚠️ CRITICAL FIX: Create redirect response with cookie set properly  
-        redirect_response = RedirectResponse(url=f"/?auth=success&repository={repository}")
-        redirect_response.set_cookie(
-            key="session_id",
-            value=session_id, 
-            httponly=True,
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
-            max_age=3600,  # 1 hour
-            path="/"  # Ensure cookie is available for all paths
-        )
-        logger.info(f"🔍 Setting session cookie: {session_id[:10]}... on redirect response")
-        
-        return redirect_response
-        
-    except Exception as e:
-        logger.error(f"❌ GitHub OAuth error: {e}")
-        # Clean up OAuth session
-        if state in oauth_sessions:
-            del oauth_sessions[state]
-        
-        return RedirectResponse(url=f"/?auth=error&message={str(e)}")
-
-@app.get("/auth/status")
-async def auth_status(request: Request):
-    """
-    Check if user is authenticated and return their GitHub permissions status.
-    """
-    access_token = get_user_token(request)
-    
-    if not access_token:
-        return JSONResponse(content={"authenticated": False})
-    
-    try:
-        # Test the token by making a request to GitHub API
-        headers = {"Authorization": f"token {access_token}"}
-        response = requests.get("https://api.github.com/user", headers=headers)
-        
-        if response.status_code == 200:
-            user_data = response.json()
-            return JSONResponse(content={
-                "authenticated": True,
-                "username": user_data.get("login"),
-                "name": user_data.get("name")
-            })
-        else:
-            # Token is invalid, remove it
-            session_id = request.cookies.get("session_id")
-            if session_id and session_id in user_tokens:
-                del user_tokens[session_id]
             return JSONResponse(content={"authenticated": False})
+        
+        try:
+            # Test the token by making a request to GitHub API
+            headers = {"Authorization": f"token {access_token}"}
+            response = requests.get("https://api.github.com/user", headers=headers)
             
-    except Exception as e:
-        logger.error(f"Error checking auth status: {e}")
-        return JSONResponse(content={"authenticated": False})
-
-@app.post("/auth/logout")
-async def logout(request: Request, response: Response):
-    """
-    Logout user and clear their stored token.
-    """
-    session_id = request.cookies.get("session_id")
-    if session_id and session_id in user_tokens:
-        del user_tokens[session_id]
-    
-    # Clear session cookie
-    response.delete_cookie("session_id")
-    
-    return JSONResponse(content={"message": "Logged out successfully"})
-
-@app.get("/instrument")
-async def instrument(
-    repository: str,
-    request: Request,
-    repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer),
-    function_instrumenter: FunctionInstrumenter = Depends(get_function_instrumenter),
-    document_retriever: DocumentRetriever = Depends(get_document_retriever),
-    pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator)
-):
-    """
-    Endpoint that fetches repository details from Github's API, clones the repo,
-    and analyzes its type (CDK, Terraform, or neither).
-    """
-    start_time = datetime.now(timezone.utc).isoformat()
-    repo_parser = RepoParser()
-
-    try:
-        # Get user's access token
-        access_token = get_user_token(request)
-        logger.info(f"🔍 Access token retrieved: {'YES' if access_token else 'NO'}")
-        if access_token:
-            logger.info(f"🔍 Access token starts with: {access_token[:10]}...")
-        
-        # Initialize GitHub client with token if available
-        github_client = get_github_client(access_token)
-        
-        # Clone the repository directly by name/URL
-        try:
-            cloned_path = github_client.clone_repository(repository, target_dir="temp_clone")
-        except Exception as clone_error:
-            # If clone fails due to permissions or not found (private repo), suggest OAuth
-            error_str = str(clone_error).lower()
-            if ("permission denied" in error_str or 
-                "authentication failed" in error_str or 
-                "404" in error_str or 
-                "not found" in error_str):
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "error": "repository_access_denied",
-                        "message": "You don't have access to this repository. Please authenticate with GitHub to grant access.",
-                        "auth_url": f"/auth/github?repository={repository}",
-                        "repository": repository
-                    }
-                )
+            if response.status_code == 200:
+                user_data = response.json()
+                return JSONResponse(content={
+                    "authenticated": True,
+                    "username": user_data.get("login"),
+                    "name": user_data.get("name")
+                })
             else:
-                raise clone_error
+                # Token is invalid, remove it
+                session_id = request.cookies.get("session_id")
+                if session_id and session_id in user_tokens:
+                    del user_tokens[session_id]
+                return JSONResponse(content={"authenticated": False})
+                
+        except Exception as e:
+            logger.error(f"Error checking auth status: {e}")
+            return JSONResponse(content={"authenticated": False})
 
-        logger.info(f"Cloned repository {repository} to {cloned_path}")
+    @app.post("/auth/logout")
+    async def logout(request: Request, response: Response):
+        """Logout user and clear their stored token."""
+        session_id = request.cookies.get("session_id")
+        if session_id and session_id in user_tokens:
+            del user_tokens[session_id]
+        
+        # Clear session cookie
+        response.delete_cookie("session_id")
+        
+        return JSONResponse(content={"message": "Logged out successfully"})
 
-        # Read repository contents
-        documents = repo_parser.read_repository_files(cloned_path)
-        # Analyze repository type
-        # analysis = repo_analyzer.analyze_repo(documents)
-        analysis = RepoType(
-            repo_type="cdk",
-            confidence=1.0,
-            evidence=["CDK stack file found"],
-            cdk_script_file="peer-tags-demo.ts",
-            terraform_script_file="",
-            runtime="node.js"
-        )
+    # Include routers
+    app.include_router(health.router)
+    app.include_router(instrument.router)
 
-        logger.info(f"Analyzed repository: {analysis}")
+    return app
 
-        # Instrument the code with Datadog.
-        if analysis.repo_type == "cdk":
-            cdk_script_file = repo_parser.find_cdk_stack_file(documents, analysis.runtime)
-            dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'cdk')
-            instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file, dd_documentation)
-        # elif analysis.repo_type == "terraform":
-        #     terraform_script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
-        #     instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
-        else:
-            raise HTTPException(status_code=500, detail="Repository type not supported.")
 
-        logger.info(f"Successfully generated instrumentation!")
-
-        repo_parts = repository.split("/")
-        if len(repo_parts) != 2:
-            raise HTTPException(status_code=400, detail="Repository must be in format 'owner/repo'")
-        repo_owner, repo_name = repo_parts
-
-        # Step 5: Generate pull request
-        try:
-            pr_result = github_client.generate_pull_request(
-                repo_path=cloned_path,
-                repo_owner=repo_owner,
-                repo_name=repo_name,
-                instrumentation_result=instrumented_code,
-                pr_generator=pr_generator
-            )
-        except Exception as pr_error:
-            # Check if it's a 403 permission error during git push
-            error_str = str(pr_error).lower()
-            if "403" in error_str or "permission denied" in error_str or "authentication failed" in error_str:
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "error": "repository_push_denied",
-                        "message": "You don't have push access to this repository. Please authenticate with GitHub to grant write permissions.",
-                        "auth_url": f"/auth/github?repository={repository}",
-                        "repository": repository,
-                        "phase": "push"
-                    }
-                )
-            else:
-                # Re-raise if it's not an auth error
-                raise pr_error
-
-        logger.info(f"Pull request result {json.dumps(pr_result, indent=2)}")
-
-        return {
-            "received_at": start_time,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "cloned_path": cloned_path,
-            "analysis": {
-                "type": analysis.repo_type,
-                "confidence": analysis.confidence,
-                "evidence": analysis.evidence,
-                "cdk_script_file": analysis.cdk_script_file,
-                "terraform_script_file": analysis.terraform_script_file,
-                "runtime": analysis.runtime
-            },
-            "pull_request": pr_result,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
