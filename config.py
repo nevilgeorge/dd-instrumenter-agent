@@ -21,7 +21,7 @@ def setup_logging():
         }
     ))
 
-    logging.basicConfig(level=logging.DEBUG, handlers=[handler])
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
     return logging.getLogger(__name__)
 
 

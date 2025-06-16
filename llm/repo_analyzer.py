@@ -7,6 +7,7 @@ import openai
 from pydantic import BaseModel, Field
 
 from util.document import Document
+from llm import BaseLLMClient
 
 
 class RepoType(BaseModel):
@@ -25,7 +26,7 @@ class RelevantFiles(BaseModel):
     files_to_create: List[str] = Field(description="List of new file paths that need to be created")
     reasoning: List[str] = Field(description="List of reasoning for why each file was selected")
 
-class RepoAnalyzer:
+class RepoAnalyzer(BaseLLMClient):
     """
     Analyzes repository contents to determine if it's a CDK, Terraform, or neither.
     Uses LangChain and OpenAI to perform the analysis.
@@ -38,8 +39,7 @@ class RepoAnalyzer:
         Args:
             client: OpenAI client instance for repository analysis
         """
-        self.client = client
-        self.logger = logging.getLogger(__name__)
+        super().__init__(client)
 
     def analyze_repo(self, documents: List[Document]) -> RepoType:
         """
@@ -81,13 +81,7 @@ Repository contents:
 Analyze this repository. Return ONLY the JSON object, no other text."""
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
             
             return RepoType(**result_dict)
@@ -146,13 +140,7 @@ You must respond with ONLY a JSON object with the following keys only (no other 
 Return ONLY the JSON object, no other text."""
 
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
             
             return RelevantFiles(**result_dict)

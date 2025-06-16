@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from util.document import Document
 from util.document_retriever import DocSection
+from llm import BaseLLMClient
 
 
 class InstrumentationResult(BaseModel):
@@ -17,7 +18,7 @@ class InstrumentationResult(BaseModel):
         default="datadog_lambda_instrumentation"
     )
 
-class FunctionInstrumenter:
+class FunctionInstrumenter(BaseLLMClient):
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
 
     def __init__(self, client: openai.OpenAI):
@@ -27,8 +28,7 @@ class FunctionInstrumenter:
         Args:
             client: OpenAI client instance for code analysis and modification
         """
-        self.client = client
-        self.logger = logging.getLogger(__name__)
+        super().__init__(client)
 
     def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection]) -> InstrumentationResult:
         """
@@ -71,13 +71,7 @@ Instrument this CDK code with Datadog:
 {cdk_script_file.page_content}"""
 
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
             self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
@@ -127,13 +121,7 @@ Instrument this Terraform code with Datadog:
 {code}"""
 
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
             self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
