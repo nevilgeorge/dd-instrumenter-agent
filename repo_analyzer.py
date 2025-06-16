@@ -1,0 +1,87 @@
+from typing import Dict, List, Literal
+from langchain.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain.schema import Document
+from langchain.chains import LLMChain
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+import logging
+import os
+
+
+class RepoType(BaseModel):
+    """Schema for repository type analysis output."""
+    repo_type: Literal["cdk", "terraform", "neither"] = Field(description="The type of infrastructure as code project")
+    confidence: float = Field(description="Confidence score between 0 and 1")
+    evidence: List[str] = Field(description="List of evidence found in the repository that led to this conclusion")
+
+class RepoAnalyzer:
+    """
+    Analyzes repository contents to determine if it's a CDK, Terraform, or neither.
+    Uses LangChain and OpenAI to perform the analysis.
+    """
+
+    def __init__(self, openai_api_key: str):
+        """
+        Initialize the analyzer with OpenAI credentials.
+        :param openai_api_key: OpenAI API key
+        """
+        self.llm = ChatOpenAI(
+            model="gpt-3.5-turbo",
+            temperature=0,
+            api_key=openai_api_key
+        )
+        
+        # Create a prompt template for repository analysis
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an expert at analyzing code repositories to determine their infrastructure type.
+            Analyze the following repository contents and determine if it's a CDK project, Terraform project, or neither.
+            
+            Look for key indicators:
+            - CDK: presence of cdk.json, CDK app files, aws-cdk-lib dependencies
+            - Terraform: .tf files, terraform.tfstate, .tfvars files
+            
+            You must respond with ONLY a JSON object with the following keys only (no other text):
+                - "repo_type": ["cdk", "terraform", "neither"],
+                - "confidence": 0.95,
+                - "evidence": ["Found cdk.json", "Found aws-cdk-lib dependency"]
+            
+            
+            The repo_type must be exactly one of: "cdk", "terraform", or "neither"
+            The confidence must be a number between 0 and 1
+            The evidence must be a list of strings
+            
+            Repository contents:
+            {repo_contents}
+            """),
+            ("human", "Analyze this repository. Return ONLY the JSON object, no other text.")
+        ])
+
+        # Create a chain that uses the prompt and parses output into our schema
+        self.chain = LLMChain(
+            llm=self.llm,
+            prompt=self.prompt,
+            output_parser=PydanticOutputParser(pydantic_object=RepoType),
+            verbose=True
+        )
+
+    def analyze_repo(self, documents: List[Document]) -> RepoType:
+        """
+        Analyze repository contents to determine its type.
+        :param documents: List of LangChain Document objects containing repository contents
+        :return: RepoType object containing the analysis results
+        """
+        # Format repository contents for the prompt
+        repo_contents = "\n".join([
+            f"File: {os.path.basename(doc.metadata.get('source', 'unknown'))}\n---"
+            for doc in documents
+        ])
+        
+        try:
+            # Get the raw dictionary result
+            result_dict = self.chain.invoke({"repo_contents": repo_contents})
+            print("Raw dictionary result:", result_dict)
+            return result_dict['text']
+        except Exception as e:
+            print(f"Error analyzing repository: {str(e)}")
+            raise 
