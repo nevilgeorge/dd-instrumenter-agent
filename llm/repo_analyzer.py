@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Dict, List, Literal
 
@@ -38,6 +39,7 @@ class RepoAnalyzer:
             client: OpenAI client instance for repository analysis
         """
         self.client = client
+        self.logger = logging.getLogger(__name__)
 
     def analyze_repo(self, documents: List[Document]) -> RepoType:
         """
@@ -90,7 +92,7 @@ Analyze this repository. Return ONLY the JSON object, no other text."""
             
             return RepoType(**result_dict)
         except Exception as e:
-            print(f"Error analyzing repository: {str(e)}")
+            self.logger.error(f"Error analyzing repository: {str(e)}")
             raise 
 
     def filter_relevant_files(self, file_list: List[str], documentation: str, 
@@ -155,5 +157,5 @@ Return ONLY the JSON object, no other text."""
             
             return RelevantFiles(**result_dict)
         except Exception as e:
-            print(f"Error filtering relevant files: {str(e)}")
+            self.logger.error(f"Error filtering relevant files: {str(e)}")
             raise

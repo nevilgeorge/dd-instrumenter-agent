@@ -11,7 +11,6 @@ from github.GithubException import GithubException
 from llm.function_instrumenter import InstrumentationResult
 from llm.pr_description_generator import PRDescription, PRDescriptionGenerator
 
-logger = logging.getLogger(__name__)
 
 class GithubClient:
     """
@@ -35,23 +34,6 @@ class GithubClient:
         else:
             self.github = Github(self.token)
 
-    def _normalize_repository_name(self, repository: str) -> str:
-        """
-        Normalize repository name from URL or owner/repo format.
-
-        Args:
-            repository: Repository name in 'owner/repo' format or full GitHub URL
-
-        Returns:
-            Normalized repository name in 'owner/repo' format
-        """
-        if repository.startswith(('http://', 'https://')):
-            parts = repository.rstrip('/').split('/')
-            if len(parts) < 2:
-                raise ValueError(f"Invalid GitHub URL format: {repository}")
-            return f"{parts[-2]}/{parts[-1]}"
-        return repository
-
     def clone_repository(self, repository: str, target_dir: str = "temp_clone") -> str:
         """
         Clone a repository by name/URL, automatically fetching the clone URL.
@@ -66,8 +48,6 @@ class GithubClient:
         Raises:
             GithubException: If repository is not found or authentication fails
         """
-        repository = self._normalize_repository_name(repository)
-
         try:
             repo = self.github.get_repo(repository)
             clone_url = repo.clone_url

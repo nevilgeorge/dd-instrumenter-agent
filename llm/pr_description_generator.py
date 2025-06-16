@@ -84,7 +84,7 @@ Generate a professional PR description for these Datadog instrumentation changes
             self.logger.error(f"Error generating PR description from diff: {str(e)}")
             # Fallback to a basic description
             return PRDescription(
-                title="Add Datadog instrumentation to Lambda functions",
+                title="Instrument with Datadog",
                 description="This PR adds Datadog monitoring and tracing instrumentation to AWS Lambda functions in the infrastructure code.",
                 summary=[
                     "Added Datadog Lambda Extension layer",
