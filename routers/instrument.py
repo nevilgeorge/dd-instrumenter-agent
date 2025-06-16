@@ -53,7 +53,8 @@ async def instrument(
             dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'cdk')
             instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file, dd_documentation)
         elif analysis.repo_type == "terraform":
-            terraform_script_file = None # TODO: Implement this
+            terraform_script_file = repo_parser.find_terraform_file(documents, analysis.runtime)
+            dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'terraform')
             instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")

@@ -74,3 +74,41 @@ class RepoParser:
             else:
                 raise Exception(f"Unsupported runtime: {runtime}")
         raise Exception("Could not find any CDK stack file (no file contains 'extends cdk.Stack')")
+
+    def find_terraform_file(self, documents: List[Document], runtime: str) -> Document:
+        """
+        Find the Terraform file by filtering for documents with .tf file extensions.
+        :param documents: List[Document] List of Document objects to search through
+        :param runtime: str The runtime (not used for Terraform but kept for consistency)
+        :return: Document The matching Document object containing the Terraform configuration
+        :raises: Exception if no matching document is found
+        """
+        terraform_files = []
+        
+        for doc in documents:
+            # Check if the file has a .tf extension
+            if doc.metadata.get('source', '').endswith('.tf'):
+                terraform_files.append(doc)
+        
+        if not terraform_files:
+            raise Exception("Could not find any Terraform files (no files with .tf extension)")
+        
+        # Create a map of file name to document
+        terraform_file_map = {}
+        for doc in terraform_files:
+            file_name = doc.metadata.get('source', '').split('/')[-1]
+            terraform_file_map[file_name] = doc
+
+        if 'main.tf' in terraform_file_map:
+            return terraform_file_map['main.tf']
+
+        resource_files = [doc for doc in terraform_files if 'resource' in doc.page_content]
+        if not resource_files:
+            raise Exception("Could not find any Terraform resource files")
+
+        #TODO: Add support for other resource types. 
+        lambda_resource_files = [doc for doc in resource_files if "aws_lambda_function" in doc.page_content]
+        if lambda_resource_files:
+            return lambda_resource_files[0]
+        
+        return resource_files[0]
