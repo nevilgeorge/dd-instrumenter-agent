@@ -23,16 +23,14 @@ class RepoAnalyzer:
     Uses LangChain and OpenAI to perform the analysis.
     """
 
-    def __init__(self, openai_api_key: str):
+    def __init__(self, llm: ChatOpenAI):
         """
-        Initialize the analyzer with OpenAI credentials.
-        :param openai_api_key: OpenAI API key
+        Initialize the RepoAnalyzer.
+        
+        Args:
+            llm: ChatOpenAI instance for repository analysis
         """
-        self.llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0,
-            api_key=openai_api_key
-        )
+        self.llm = llm
         
         # Create a prompt template for repository analysis
         self.prompt = ChatPromptTemplate.from_messages([

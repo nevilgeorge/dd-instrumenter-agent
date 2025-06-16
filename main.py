@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from github_client import GithubClient
 from repo_parser import RepoParser
 from repo_analyzer import RepoAnalyzer
+from function_instrumenter import FunctionInstrumenter
 import os
 import logging
-
+from langchain_openai import ChatOpenAI
 # Enable LangChain debug logging
 logging.getLogger("langchain").setLevel(logging.DEBUG)
 
@@ -16,15 +17,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0,
+    api_key=os.getenv("OPENAI_API_KEY")
+)
+
 def get_repo_analyzer() -> RepoAnalyzer:
     """Dependency to get a configured RepoAnalyzer instance."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="OPENAI_API_KEY environment variable not set"
-        )
-    return RepoAnalyzer(api_key)
+    return RepoAnalyzer(llm)
+
+def get_function_instrumenter() -> FunctionInstrumenter:
+    """Dependency to get a configured FunctionInstrumenter instance."""
+    return FunctionInstrumenter(llm)
 
 @app.get("/")
 async def index():
@@ -72,6 +77,13 @@ async def read_repository(
         documents = repo_parser.read_repository_files(cloned_path)
         # Analyze repository type
         analysis = repo_analyzer.analyze_repo(documents)
+        # Find file contents to update.
+        if analysis.repo_type == "cdk":
+            cdk_script_file = repo_parser.find_document_by_filename(documents, analysis.cdk_script_file)
+        elif analysis.repo_type == "terraform":
+            terraform_script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
+        else:
+            raise HTTPException(status_code=500, detail="Repository type not supported.")
         
         return {
             "repository": repo_details,

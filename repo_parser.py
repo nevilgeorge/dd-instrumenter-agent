@@ -45,3 +45,25 @@ class RepoParser:
             return documents
         except Exception as e:
             raise Exception(f"Failed to read repository files: {str(e)}")
+    
+    def find_document_by_filename(self, documents: List[Document], filename: str) -> Document:
+        """
+        Find a specific Document from a list of Documents by matching the filename.
+        :param documents: List[Document] List of LangChain Document objects to search through
+        :param filename: str The name of the file to find
+        :return: Document The matching Document object
+        :raises: Exception if no matching document is found
+        """
+        for doc in documents:
+            if os.path.basename(doc.metadata.get('source', '')) == filename:
+                return doc
+        raise Exception(f"Could not find document with filename: {filename}")
+
+
+
+
+
+
+
+
+
