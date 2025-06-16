@@ -1,8 +1,9 @@
-from typing import Dict, List
-from pydantic import BaseModel, Field
-import logging
 import json
+import logging
+from typing import Dict, List
+
 import openai
+from pydantic import BaseModel, Field
 
 
 class PRDescription(BaseModel):
@@ -77,7 +78,7 @@ Generate a professional PR description for these Datadog instrumentation changes
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
 
-            self.logger.info("Successfully generated PR description from git diff")
+            self.logger.debug("Successfully generated PR description from git diff")
             return PRDescription(**result_dict)
         except Exception as e:
             self.logger.error(f"Error generating PR description from diff: {str(e)}")

@@ -1,9 +1,11 @@
-from typing import Dict, List, Literal
-from util.document import Document
-from pydantic import BaseModel, Field
-import os
 import json
+import os
+from typing import Dict, List, Literal
+
 import openai
+from pydantic import BaseModel, Field
+
+from util.document import Document
 
 
 class RepoType(BaseModel):

@@ -1,19 +1,20 @@
+import json
+import logging
 import sys
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
+
+import openai
+from dd_internal_authentication.client import (
+    JWTDDToolAuthClientTokenManager, JWTInternalServiceAuthClientTokenManager)
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+
+from llm.function_instrumenter import FunctionInstrumenter
+from llm.pr_description_generator import PRDescriptionGenerator
+from llm.repo_analyzer import RepoAnalyzer, RepoType
 from util.document_retriever import DocumentRetriever
 from util.github_client import GithubClient
 from util.repo_parser import RepoParser
-from llm.repo_analyzer import RepoAnalyzer, RepoType
-from llm.function_instrumenter import FunctionInstrumenter, InstrumentationResult
-from llm.pr_description_generator import PRDescriptionGenerator
-import openai
-from dd_internal_authentication.client import (
-    JWTInternalServiceAuthClientTokenManager,
-    JWTDDToolAuthClientTokenManager,
-)
-import logging
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,23 +111,14 @@ async def instrument(
     Endpoint that fetches repository details from Github's API, clones the repo,
     and analyzes its type (CDK, Terraform, or neither).
     """
+    start_time = datetime.now(timezone.utc).isoformat()
     repo_parser = RepoParser()
+
     try:
-        # Fetch and clone the repository
-        repo_details = github_client.read_repository(repository)
-        clone_url = repo_details.get("clone_url")
-        if not clone_url:
-            raise HTTPException(status_code=500, detail="Repository response did not contain a clone_url.")
+        # Clone the repository directly by name/URL
+        cloned_path = github_client.clone_repository(repository, target_dir="temp_clone")
 
-        logger.info(f"Cloning repository {clone_url}")
-
-        # Add authentication to clone URL if token is available
-        if github_client.token:
-            clone_url = clone_url.replace('https://', f'https://{github_client.token}@')
-
-        cloned_path = repo_parser.clone_repository(clone_url, target_dir="temp_clone")
-
-        logger.info(f"Cloned repository to {cloned_path}")
+        logger.info(f"Cloned repository {repository} to {cloned_path}")
 
         # Read repository contents
         documents = repo_parser.read_repository_files(cloned_path)
@@ -141,7 +133,7 @@ async def instrument(
             runtime="node.js"
         )
 
-        logger.info(f"Analyzed repository {analysis}")
+        logger.info(f"Analyzed repository: {analysis}")
 
         # Instrument the code with Datadog.
         if analysis.repo_type == "cdk":
@@ -154,7 +146,7 @@ async def instrument(
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
 
-        logger.info(f"Instrumented code!")
+        logger.info(f"Successfully generated instrumentation!")
 
         repo_parts = repository.split("/")
         if len(repo_parts) != 2:
@@ -170,11 +162,11 @@ async def instrument(
             pr_generator=pr_generator
         )
 
-        logger.info(f"Pull request result {pr_result}")
+        logger.info(f"Pull request result {json.dumps(pr_result, indent=2)}")
 
         return {
-            "repository": repo_details,
-            "received_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": start_time,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "cloned_path": cloned_path,
             "analysis": {
                 "type": analysis.repo_type,
@@ -185,7 +177,6 @@ async def instrument(
                 "runtime": analysis.runtime
             },
             "pull_request": pr_result,
-            "completed_at": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")

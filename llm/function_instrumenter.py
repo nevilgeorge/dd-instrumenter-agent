@@ -1,10 +1,13 @@
-from typing import Dict, List, Literal
-from pydantic import BaseModel, Field
-import logging
 import json
+import logging
+from typing import Dict, List, Literal
+
 import openai
-from util.document_retriever import DocSection
+from pydantic import BaseModel, Field
+
 from util.document import Document
+from util.document_retriever import DocSection
+
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
@@ -77,7 +80,7 @@ Instrument this CDK code with Datadog:
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
 
-            self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
+            self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
@@ -134,7 +137,7 @@ Instrument this Terraform code with Datadog:
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
 
-            self.logger.info(f"Successfully instrumented Terraform file with Datadog: {file_path}")
+            self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting Terraform file {file_path}: {str(e)}")

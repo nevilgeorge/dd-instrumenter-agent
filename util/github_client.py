@@ -1,15 +1,15 @@
-import requests
-import os
-import time
-import subprocess
-import shutil
-from typing import Any, Dict, Optional
-from llm.pr_description_generator import PRDescriptionGenerator, PRDescription
-from llm.function_instrumenter import InstrumentationResult
 import logging
+import os
+import shutil
+import time
+from typing import Any, Dict, Optional
+
 from git import Repo
 from github import Github
-import logging
+from github.GithubException import GithubException
+
+from llm.function_instrumenter import InstrumentationResult
+from llm.pr_description_generator import PRDescription, PRDescriptionGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,6 @@ class GithubClient:
     """
     A client to interact with the Github API with authentication.
     """
-    BASE_URL = "https://api.github.com"
 
     def __init__(self, github_token: Optional[str] = None):
         """
@@ -31,134 +30,66 @@ class GithubClient:
         self.logger = logging.getLogger(__name__)
 
         if not self.token:
-            logger.warning("No GitHub token provided. API requests will be rate-limited.")
-
-        self.headers = {
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "DD-Instrumenter-Agent/1.0"
-        }
-        if self.token:
-            self.headers["Authorization"] = f"token {self.token}"
-            self.github = Github(self.token)
+            self.logger.warning("No GitHub token provided! Using unauthenticated Github client.")
+            self.github = Github()
         else:
-            self.github = None
+            self.github = Github(self.token)
 
-    def _make_request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
+    def _normalize_repository_name(self, repository: str) -> str:
         """
-        Make an authenticated request to the GitHub API.
+        Normalize repository name from URL or owner/repo format.
 
         Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint (will be appended to BASE_URL)
-            **kwargs: Additional arguments to pass to requests
+            repository: Repository name in 'owner/repo' format or full GitHub URL
 
         Returns:
-            Response object from the request
-
-        Raises:
-            requests.exceptions.RequestException: If the request fails
-            ValueError: If authentication fails
+            Normalized repository name in 'owner/repo' format
         """
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
-        kwargs.setdefault('headers', {}).update(self.headers)
-
-        try:
-            response = requests.request(method, url, **kwargs)
-            response.raise_for_status()
-
-            # Check for rate limiting
-            if 'X-RateLimit-Remaining' in response.headers:
-                remaining = int(response.headers['X-RateLimit-Remaining'])
-                if remaining < 10:
-                    logger.warning(f"GitHub API rate limit running low: {remaining} requests remaining")
-
-            return response
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
-                raise ValueError("GitHub authentication failed. Please check your token.") from e
-            elif e.response.status_code == 403:
-                raise ValueError("GitHub API access forbidden. Please check your token permissions.") from e
-            elif e.response.status_code == 404:
-                raise ValueError(f"Repository not found: {url}") from e
-            raise
-
-    def read_repository(self, repository: str) -> Dict[str, Any]:
-        """
-        Fetch repository details from Github's API.
-
-        Args:
-            repository: str in the form 'owner/repo' or full GitHub URL
-
-        Returns:
-            JSON response from Github API
-
-        Raises:
-            ValueError: If authentication fails or repository is not found
-            requests.exceptions.RequestException: For other API errors
-        """
-        # Handle full GitHub URLs
         if repository.startswith(('http://', 'https://')):
-            # Extract owner/repo from URL
             parts = repository.rstrip('/').split('/')
             if len(parts) < 2:
                 raise ValueError(f"Invalid GitHub URL format: {repository}")
-            repository = f"{parts[-2]}/{parts[-1]}"
+            return f"{parts[-2]}/{parts[-1]}"
+        return repository
 
-        try:
-            response = self._make_request('GET', f"repos/{repository}")
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch repository {repository}: {str(e)}")
-            raise
-
-    def get_repository_contents(self, repository: str, path: str = "") -> Dict[str, Any]:
+    def clone_repository(self, repository: str, target_dir: str = "temp_clone") -> str:
         """
-        Get contents of a repository directory.
+        Clone a repository by name/URL, automatically fetching the clone URL.
 
         Args:
-            repository: str in the form 'owner/repo'
-            path: str path within the repository (default: root)
-
-        Returns:
-            JSON response containing directory contents
-
-        Raises:
-            ValueError: If authentication fails or path is not found
-            requests.exceptions.RequestException: For other API errors
-        """
-        try:
-            response = self._make_request('GET', f"repos/{repository}/contents/{path}")
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch contents of {path} in {repository}: {str(e)}")
-            raise
-
-    def clone_repository(self, clone_url: str, target_dir: str = "temp_clone") -> str:
-        """
-        Clone a repository from the given clone_url into a local folder.
-
-        Args:
-            clone_url: The clone URL (e.g. from the "clone_url" field of a repo response)
+            repository: Repository name in 'owner/repo' format or full GitHub URL
             target_dir: The target folder (defaults to "temp_clone")
 
         Returns:
             The absolute path of the cloned folder
+
+        Raises:
+            GithubException: If repository is not found or authentication fails
         """
-        if os.path.exists(target_dir):
-            shutil.rmtree(target_dir)
-        os.makedirs(target_dir, exist_ok=True)
+        repository = self._normalize_repository_name(repository)
+
         try:
-            subprocess.run(
-                ["git", "clone", clone_url, target_dir],
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            self.logger.info(f"Successfully cloned repository to {target_dir}")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to clone repository: {e.stderr}")
-            raise Exception(f"Failed to clone repository: {e.stderr}")
-        return os.path.abspath(target_dir)
+            repo = self.github.get_repo(repository)
+            clone_url = repo.clone_url
+
+            # Add authentication to clone URL if token is available
+            if self.token:
+                clone_url = clone_url.replace('https://', f'https://{self.token}@')
+
+            if os.path.exists(target_dir):
+                shutil.rmtree(target_dir)
+
+            Repo.clone_from(clone_url, target_dir)
+            self.logger.debug(f"Successfully cloned repository {repository} to {target_dir}")
+
+            return os.path.abspath(target_dir)
+
+        except GithubException as e:
+            self.logger.error(f"Failed to fetch repository {repository}: {str(e)}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to clone repository: {str(e)}")
+            raise
 
     def _create_branch_and_commit(
         self,
@@ -182,7 +113,7 @@ class GithubClient:
             # Create and checkout new branch
             new_branch = repo.create_head(branch_name)
             new_branch.checkout()
-            self.logger.info(f"Created and checked out branch: {branch_name}")
+            self.logger.debug(f"Created and checked out branch: {branch_name}")
 
             # Write the changed files
             for filename, content in file_changes.items():
@@ -193,7 +124,7 @@ class GithubClient:
 
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
-                self.logger.info(f"Updated file: {filename}")
+                self.logger.debug(f"Updated file: {filename}")
 
             # Stage all changes
             repo.git.add(A=True)
@@ -202,7 +133,7 @@ class GithubClient:
             repo.index.commit("Instrumented with Datadog")
         except Exception as e:
             self.logger.error(f"Git operation failed: {str(e)}")
-            raise Exception(f"Failed to create branch and commit: {str(e)}")
+            raise
 
     def _push_branch(self, repo_path: str, branch_name: str) -> None:
         """
@@ -216,11 +147,11 @@ class GithubClient:
             repo = Repo(repo_path)
             origin = repo.remote(name="origin")
             origin.push(branch_name, set_upstream=True)
-            self.logger.info(f"Pushed branch {branch_name} to origin")
+            self.logger.debug(f"Pushed branch {branch_name} to origin")
 
         except Exception as e:
             self.logger.error(f"Failed to push branch: {str(e)}")
-            raise Exception(f"Failed to push branch {branch_name}: {str(e)}")
+            raise
 
     def _create_pull_request(
         self,
@@ -229,7 +160,7 @@ class GithubClient:
         branch_name: str,
         pr_description: PRDescription,
         base_branch: str = "main",
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Create a pull request using GitHub API.
 
@@ -244,8 +175,8 @@ class GithubClient:
             Dictionary containing PR information
         """
         try:
-            if not self.github:
-                raise Exception("GitHub token not provided")
+            if not self.token:
+                raise Exception("GitHub token required for creating pull requests")
 
             # Get the repository
             repo = self.github.get_repo(f"{repo_owner}/{repo_name}")
@@ -267,7 +198,7 @@ class GithubClient:
                 base=base_branch,
             )
 
-            self.logger.info(f"Created pull request: {pr.html_url}")
+            self.logger.debug(f"Created pull request: {pr.html_url}")
 
             return {
                 "pr_url": pr.html_url,
@@ -279,7 +210,7 @@ class GithubClient:
 
         except Exception as e:
             self.logger.error(f"Failed to create pull request: {str(e)}")
-            raise Exception(f"Failed to create pull request: {str(e)}")
+            raise
 
     def _get_git_diff(self, repo_path: str, base_branch: str = "main") -> str:
         """
@@ -302,7 +233,7 @@ class GithubClient:
 
         except Exception as e:
             self.logger.error(f"Failed to get git diff: {str(e)}")
-            raise Exception(f"Failed to get git diff: {str(e)}")
+            raise
 
     def generate_pull_request(
         self,
@@ -311,9 +242,9 @@ class GithubClient:
         repo_name: str,
         instrumentation_result: InstrumentationResult,
         pr_generator: PRDescriptionGenerator,
-        branch_name: str = None,
+        branch_name: Optional[str] = None,
         base_branch: str = "main",
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Complete workflow to generate a pull request with the given instrumentation changes.
 
@@ -333,33 +264,33 @@ class GithubClient:
             # Generate branch name if not provided
             if not branch_name:
                 timestamp = int(time.time())
-                branch_name = f"feature/datadog-instrumentation-{timestamp}"
+                branch_name = f"feature/dd-instrument-{timestamp}"
 
             # Extract file changes from instrumentation result
             file_changes = instrumentation_result.file_changes
 
             # Create branch and commit changes first
-            self.logger.info(f"Creating branch {branch_name} and committing changes...")
+            self.logger.debug(f"Creating branch {branch_name} and committing changes...")
             self._create_branch_and_commit(
                 repo_path, branch_name, file_changes
             )
 
             # Get git diff for better context
-            self.logger.info("Getting git diff for PR description generation...")
+            self.logger.debug("Getting git diff for PR description generation...")
             git_diff = self._get_git_diff(repo_path, base_branch)
 
             # Generate PR description using the actual diff
-            self.logger.info("Generating PR description from git diff...")
+            self.logger.debug("Generating PR description from git diff...")
             pr_description = pr_generator.generate_description_from_diff(
                 git_diff, list(file_changes.keys())
             )
 
             # Push branch to remote
-            self.logger.info("Pushing branch to remote...")
+            self.logger.debug("Pushing branch to remote...")
             self._push_branch(repo_path, branch_name)
 
             # Create pull request
-            self.logger.info("Creating pull request...")
+            self.logger.debug("Creating pull request...")
             pr_info = self._create_pull_request(
                 repo_owner, repo_name, branch_name, pr_description, base_branch
             )
@@ -373,4 +304,4 @@ class GithubClient:
 
         except Exception as e:
             self.logger.error(f"Failed to generate pull request: {str(e)}")
-            raise Exception(f"Pull request generation failed: {str(e)}")
+            raise
