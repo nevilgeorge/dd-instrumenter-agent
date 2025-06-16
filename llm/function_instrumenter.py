@@ -8,8 +8,7 @@ from util.document import Document
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
-    modified_code: str = Field(description="The complete modified code with Datadog instrumentation")
-    changes_made: List[str] = Field(description="List of specific changes made to each Lambda function")
+    file_changes: Dict[str, str] = Field(description="Map of file paths to their modified contents with Datadog instrumentation")
     instrumentation_type: Literal["datadog_lambda_instrumentation"] = Field(
         description="Type of instrumentation added",
         default="datadog_lambda_instrumentation"
@@ -17,11 +16,11 @@ class InstrumentationResult(BaseModel):
 
 class FunctionInstrumenter:
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
-    
+
     def __init__(self, client: openai.OpenAI):
         """
         Initialize the FunctionInstrumenter.
-        
+
         Args:
             client: OpenAI client instance for code analysis and modification
         """
@@ -31,7 +30,7 @@ class FunctionInstrumenter:
     def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection], additional_context: str) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
-        
+
         Args:
             cdk_script_file: Document containing CDK file content
             dd_documentation: Datadog documentation sections
@@ -53,7 +52,7 @@ class FunctionInstrumenter:
             and DD_VERSION environment variables.
 
             Your task is to update the CDK stack file to install Datadog according to the documentation.
-            Do not return a diff — you should return the complete updated file content.
+            Do not return a diff — you should return the entire, COMPLETE file content without any abbreviations / sections omitted.
 
             Rules:
             - Preserve the existing code formatting and style.
@@ -63,11 +62,15 @@ class FunctionInstrumenter:
             - The file structure of the project may be different than the documentation, you should follow the file structure of the project.
             - Use relative imports if you are unsure what the project import paths are.
             - It's okay not to edit a file if it's not needed (e.g. if you have already edited another one or this one is not needed).
+            - Return the full, final modified code in file_changes
 
-            You must respond with ONLY a JSON object containing the following fields:
-                - "modified_code": "the complete modified code with Datadog instrumentation",
-                - "changes_made": ["list of specific changes made to each Lambda function"],
-                - "instrumentation_type": "datadog_lambda_instrumentation"
+            You must respond with ONLY a dict object containing (do not format as json):
+            {{
+            "file_changes": {{
+                "{cdk_script_file.metadata['source']}": "the complete modified file content"
+            }},
+            "instrumentation_type": "datadog_lambda_instrumentation"
+            }}
 
             CONTEXT
             ---
@@ -83,32 +86,35 @@ class FunctionInstrumenter:
 
             Also consider the following optional customization instructions from the user:
             {additional_context}
+
+            ---
+
+            Instrument this CDK code with Datadog.
 """
         
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="openai/gpt-4o-mini",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
-            
+
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
-            
+
             self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
-    
     def instrument_terraform_file(self, file_path: str, code: str) -> InstrumentationResult:
         """
         Instrument a Terraform file with Datadog Lambda instrumentation.
-        
+
         Args:
             file_path: Path to the Terraform file
             code: Content of the Terraform file
-            
+
         Returns:
             InstrumentationResult containing the modified code and change information
         """
@@ -141,19 +147,19 @@ You must respond with ONLY a JSON object containing:
 
 Instrument this Terraform code with Datadog:
 {code}"""
-        
+
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-3.5-turbo",
+                model="openai/gpt-4o-mini",
                 stream=False,
                 messages=[{"role": "user", "content": prompt}]
             )
-            
+
             result_text = response.choices[0].message.content
             result_dict = json.loads(result_text)
-            
+
             self.logger.info(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting Terraform file {file_path}: {str(e)}")
-            raise 
+            raise
