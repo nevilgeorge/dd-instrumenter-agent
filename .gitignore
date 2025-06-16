@@ -1,2 +1,5 @@
 __pycache__/
 temp_clone/
+uv.lock
+pyproject.toml
+.python-version

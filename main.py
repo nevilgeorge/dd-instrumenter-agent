@@ -1,17 +1,17 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
-from document_retriever import DocumentRetriever
-from github_client import GithubClient
-from repo_parser import RepoParser
-from repo_analyzer import RepoAnalyzer, RepoType
-from function_instrumenter import FunctionInstrumenter
-from pr_description_generator import PRDescriptionGenerator
-import os
-import logging
-from langchain_openai import ChatOpenAI
-# Enable LangChain debug logging
-logging.getLogger("langchain").setLevel(logging.DEBUG)
+from util.document_retriever import DocumentRetriever
+from util.github_client import GithubClient
+from util.repo_parser import RepoParser
+from llm.repo_analyzer import RepoAnalyzer, RepoType
+from llm.function_instrumenter import FunctionInstrumenter, InstrumentationResult
+from llm.pr_description_generator import PRDescriptionGenerator
+import openai
+from dd_internal_authentication.client import (
+    JWTInternalServiceAuthClientTokenManager,
+    JWTDDToolAuthClientTokenManager,
+)
 
 app = FastAPI(
     title="DD Instrumenter Agent",
@@ -19,23 +19,40 @@ app = FastAPI(
     version="1.0.0"
 )
 
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
-    temperature=0,
-    api_key=os.getenv("OPENAI_API_KEY")
+local = True  # Switch based on environment
+if local:
+    token = JWTDDToolAuthClientTokenManager.instance(
+        name="rapid-ai-platform", datacenter="us1.staging.dog"
+    ).get_token("rapid-ai-platform")
+    host = "https://ai-gateway.us1.staging.dog"
+else:
+    token = (
+        JWTInternalServiceAuthClientTokenManager.instance(
+            name="rapid-ai-platform"
+        ).get_token("rapid-ai-platform"),
+    )
+    host = "http://ai-gateway.rapid-ai-platform.sidecar-proxy.fabric.dog.:15001"
+
+client = openai.OpenAI(
+    api_key=token,
+    base_url=f"{host}/v1",
+    default_headers={
+        "source": "dd-instrumenter-agent",
+        "org-id": "2",
+    },
 )
 
 def get_repo_analyzer() -> RepoAnalyzer:
     """Dependency to get a configured RepoAnalyzer instance."""
-    return RepoAnalyzer(llm)
+    return RepoAnalyzer(client)
 
 def get_function_instrumenter() -> FunctionInstrumenter:
     """Dependency to get a configured FunctionInstrumenter instance."""
-    return FunctionInstrumenter(llm)
+    return FunctionInstrumenter(client)
 
 def get_pr_description_generator() -> PRDescriptionGenerator:
     """Dependency to get a configured PRDescriptionGenerator instance."""
-    return PRDescriptionGenerator(llm)
+    return PRDescriptionGenerator(client)
 
 def get_github_client() -> GithubClient:
     """Dependency to get a configured GithubClient instance."""
@@ -87,13 +104,13 @@ async def read_repository(
         clone_url = repo_details.get("clone_url")
         if not clone_url:
             raise HTTPException(status_code=500, detail="Repository response did not contain a clone_url.")
-        
+
         # Add authentication to clone URL if token is available
         if github_client.token:
             clone_url = clone_url.replace('https://', f'https://{github_client.token}@')
-        
+
         cloned_path = repo_parser.clone_repository(clone_url, target_dir="temp_clone")
-        
+
         # Read repository contents
         documents = repo_parser.read_repository_files(cloned_path)
         # Analyze repository type
@@ -136,42 +153,14 @@ async def read_repository(
 @app.post("/generate-pull-request")
 async def generate_pull_request(
     repository: str,
-    repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer),
-    function_instrumenter: FunctionInstrumenter = Depends(get_function_instrumenter),
+    instrumentation_result: InstrumentationResult,
+    github_client: GithubClient = Depends(get_github_client),
     pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator)
 ):
     """
     Complete workflow: clone repo, analyze, instrument, and create PR.
     """
     try:
-        # Step 1: Fetch and clone repository
-        repo_details = github_client.read_repository(repository)
-        clone_url = repo_details.get("clone_url")
-        if not clone_url:
-            raise HTTPException(status_code=500, detail="Repository response did not contain a clone_url.")
-
-        cloned_path = github_client.clone_repository(clone_url, target_dir="temp_clone")
-
-        # Step 2: Analyze repository type
-        documents = repo_parser.read_repository_files(cloned_path)
-        analysis = repo_analyzer.analyze_repo(documents)
-
-        # Step 3: Instrument the code
-        if analysis.repo_type == "cdk":
-            script_file = repo_parser.find_document_by_filename(documents, analysis.cdk_script_file)
-            instrumentation_result = function_instrumenter.instrument_cdk_file(
-                script_file.metadata['source'],
-                script_file.page_content
-            )
-        elif analysis.repo_type == "terraform":
-            script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
-            instrumentation_result = function_instrumenter.instrument_terraform_file(
-                script_file.metadata['source'],
-                script_file.page_content
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Repository type not supported.")
-
         # Step 4: Extract repo owner/name for PR creation
         repo_parts = repository.split("/")
         if len(repo_parts) != 2:
@@ -189,15 +178,6 @@ async def generate_pull_request(
 
         return {
             "repository": repository,
-            "analysis": {
-                "type": analysis.repo_type,
-                "confidence": analysis.confidence,
-                "evidence": analysis.evidence
-            },
-            "instrumentation": {
-                "type": instrumentation_result.instrumentation_type,
-                "files_changed": list(instrumentation_result.file_changes.keys())
-            },
             "pull_request": pr_result,
             "completed_at": datetime.now(timezone.utc).isoformat()
         }
