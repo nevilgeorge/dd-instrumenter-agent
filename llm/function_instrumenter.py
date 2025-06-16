@@ -1,10 +1,14 @@
-from typing import Dict, List, Literal
-from pydantic import BaseModel, Field
-import logging
 import json
+import logging
+from typing import Dict, List, Literal
+
 import openai
-from util.document_retriever import DocSection
+from pydantic import BaseModel, Field
+
 from util.document import Document
+from util.document_retriever import DocSection
+from llm import BaseLLMClient
+
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
@@ -14,7 +18,7 @@ class InstrumentationResult(BaseModel):
         default="datadog_lambda_instrumentation"
     )
 
-class FunctionInstrumenter:
+class FunctionInstrumenter(BaseLLMClient):
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
 
     def __init__(self, client: openai.OpenAI):
@@ -24,10 +28,9 @@ class FunctionInstrumenter:
         Args:
             client: OpenAI client instance for code analysis and modification
         """
-        self.client = client
-        self.logger = logging.getLogger(__name__)
-    
-    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection], additional_context: str) -> InstrumentationResult:
+        super().__init__(client)
+
+    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection]) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
 
@@ -93,16 +96,10 @@ class FunctionInstrumenter:
 """
         
         try:
-            response = self.client.chat.completions.create(
-                model="openai/gpt-4o-mini",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
-            self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
+            self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
@@ -140,8 +137,7 @@ For each Lambda function, you must:
 
 You must respond with ONLY a JSON object containing:
 {{
-    "modified_code": "the complete modified code with Datadog instrumentation",
-    "changes_made": ["list of specific changes made to each Lambda function"],
+    "file_changes": {{"{file_path}": "the complete modified code with Datadog instrumentation"}},
     "instrumentation_type": "datadog_lambda_instrumentation"
 }}
 
@@ -149,16 +145,10 @@ Instrument this Terraform code with Datadog:
 {code}"""
 
         try:
-            response = self.client.chat.completions.create(
-                model="openai/gpt-4o-mini",
-                stream=False,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            result_text = response.choices[0].message.content
+            result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
-            self.logger.info(f"Successfully instrumented Terraform file with Datadog: {file_path}")
+            self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
         except Exception as e:
             self.logger.error(f"Error instrumenting Terraform file {file_path}: {str(e)}")

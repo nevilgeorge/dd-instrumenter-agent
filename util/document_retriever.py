@@ -1,9 +1,11 @@
-import requests
-from bs4 import BeautifulSoup
-from typing import Dict, Optional
 import logging
 from dataclasses import dataclass
+from typing import Dict, Optional
 from urllib.parse import urljoin
+
+import requests
+from bs4 import BeautifulSoup
+
 
 @dataclass
 class DocSection:

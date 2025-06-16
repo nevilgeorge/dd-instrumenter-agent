@@ -1,35 +1,15 @@
+import glob
 import os
 import subprocess
-import glob
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from util.document import Document
+
 
 class RepoParser:
     """
     A class that encapsulates logic for parsing repository files.
     """
-
-    def clone_repository(self, clone_url: str, target_dir: str = "temp_clone") -> str:
-        """
-        Clone a repository from the given URL.
-
-        Args:
-            clone_url: URL to clone the repository from
-            target_dir: Directory to clone into
-
-        Returns:
-            Path to the cloned repository
-        """
-        try:
-            # Remove existing directory if it exists
-            if os.path.exists(target_dir):
-                subprocess.run(["rm", "-rf", target_dir], check=True)
-
-            # Clone the repository
-            subprocess.run(["git", "clone", clone_url, target_dir], check=True)
-            return os.path.abspath(target_dir)
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to clone repository: {str(e)}")
 
     def read_repository_files(self, repo_path: str, glob_pattern: str = "**/*") -> List[Document]:
         """
