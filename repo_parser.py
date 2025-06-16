@@ -46,24 +46,29 @@ class RepoParser:
         except Exception as e:
             raise Exception(f"Failed to read repository files: {str(e)}")
     
-    def find_document_by_filename(self, documents: List[Document], filename: str) -> Document:
+    def find_cdk_stack_file(self, documents: List[Document], runtime: str) -> Document:
         """
-        Find a specific Document from a list of Documents by matching the filename.
+        Find the CDK stack file by looking for files that contain "extends cdk.Stack".
         :param documents: List[Document] List of LangChain Document objects to search through
-        :param filename: str The name of the file to find
-        :return: Document The matching Document object
+        :return: Document The matching Document object containing the CDK stack definition
         :raises: Exception if no matching document is found
         """
         for doc in documents:
-            if os.path.basename(doc.metadata.get('source', '')) == filename:
-                return doc
-        raise Exception(f"Could not find document with filename: {filename}")
-
-
-
-
-
-
-
-
-
+            if runtime == 'node.js':
+                if "extends cdk.Stack" in doc.page_content:
+                    return doc
+            elif runtime == 'python':
+                if "from aws_cdk import Stack" in doc.page_content:
+                    return doc
+            elif runtime == 'java':
+                if "extends Stack" in doc.page_content:
+                    return doc
+            elif runtime == 'go':
+                if "awscdk.NewStack" in doc.page_content:
+                    return doc
+            elif runtime == 'dotnet':
+                if "using Amazon.CDK;" in doc.page_content:
+                    return doc
+            else:
+                raise Exception(f"Unsupported runtime: {runtime}")
+        raise Exception("Could not find any CDK stack file (no file contains 'extends cdk.Stack')")

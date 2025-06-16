@@ -15,6 +15,7 @@ class RepoType(BaseModel):
     evidence: List[str] = Field(description="List of evidence found in the repository that led to this conclusion")
     cdk_script_file: str = Field(description="The name of the file that contains the CDK script")
     terraform_script_file: str = Field(description="The name of the file that contains the Terraform script")
+    runtime: str = Field(description="The runtime of the Lambda function")
 
 class RepoAnalyzer:
     """
@@ -37,6 +38,7 @@ class RepoAnalyzer:
             Analyze the following repository contents and determine if it's a CDK project, Terraform project, or neither.
             If a CDK project is detected, look for the cdk.json file and the CDK app files.
             If a Terraform project is detected, look for the .tf files, terraform.tfstate, and .tfvars files.
+            Also, look for the runtime of the Lambda function handler. If typeScript is detected, return node.js.
             
             Look for key indicators:
             - CDK: presence of cdk.json, CDK app files, aws-cdk-lib dependencies
@@ -48,7 +50,7 @@ class RepoAnalyzer:
                 - "evidence": ["Found cdk.json", "Found aws-cdk-lib dependency"]
                 - "cdk_script_file": the name of the file that contains the CDK script (if detected), empty string if not detected
                 - "terraform_script_file": the name of the file that contains the Terraform script (if detected), empty string if not detected
-            
+                - "runtime": the runtime of the Lambda function handler (if detected), empty string if not detected. One of ['node.js', 'python', 'java', 'go', 'ruby', 'dotnet']
             
             The repo_type must be exactly one of: "cdk", "terraform", or "neither"
             The confidence must be a number between 0 and 1
