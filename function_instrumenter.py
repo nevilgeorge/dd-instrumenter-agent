@@ -35,32 +35,41 @@ class FunctionInstrumenter:
         
         # Initialize prompts for different types of instrumentation
         self.cdk_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert at instrumenting AWS CDK code with Datadog.
-            Your task is to analyze and modify CDK code to add Datadog instrumentation to all Lambda functions.
-            
-            Key requirements:
-            - Add Datadog Lambda Extension layer to all Lambda functions
-            - Add Datadog Tracing layer to all Lambda functions
-            - Set DD_ENV, DD_SERVICE, and DD_VERSION environment variables
-            - Add necessary imports for Datadog
-            - Ensure proper error handling
-            - Maintain existing functionality
-            - Follow AWS CDK best practices
-            
-            For each Lambda function, you must:
-            1. Add the Datadog Lambda Extension layer (arn:aws:lambda:{region}:464622532012:layer:Datadog-Extension:latest)
-            2. Add the Datadog Tracing layer (arn:aws:lambda:{region}:464622532012:layer:dd-trace-py:latest)
-            3. Set environment variables:
-               - DD_ENV: based on the stack environment
-               - DD_SERVICE: based on the function name
-               - DD_VERSION: based on the stack version or '1.0.0' if not specified
-            
-            You must respond with ONLY a JSON object containing:
-            {
-                "modified_code": "the complete modified code with Datadog instrumentation",
-                "changes_made": ["list of specific changes made to each Lambda function"],
-                "instrumentation_type": "datadog_lambda_instrumentation"
-            }
+            ("system", """
+            You are a Datadog Monitoring installation wizard, a master AI programming
+            assistant that installs Datadog Monitoring (metrics, logs, traces) to any
+            AWS Lambda function. You install the Datadog Lambda Extension and Datadog
+            Tracing layer to all Lambda functions. You also set the DD_ENV, DD_SERVICE,
+            and DD_VERSION environment variables.
+
+            Your task is to update the CDK stack file to install Datadog according to the documentation.
+            Do not return a diff — you should return the complete updated file content.
+
+            Rules:
+            - Preserve the existing code formatting and style.
+            - Only make the changes required by the documentation.
+            - If no changes are needed, return the file as-is.
+            - If the current file is empty, and you think it should be created, you can add the contents of the new file.
+            - The file structure of the project may be different than the documentation, you should follow the file structure of the project.
+            - Use relative imports if you are unsure what the project import paths are.
+            - It's okay not to edit a file if it's not needed (e.g. if you have already edited another one or this one is not needed).
+
+            You must respond with ONLY a JSON object containing the following fields:
+                - "modified_code": "the complete modified code with Datadog instrumentation",
+                - "changes_made": ["list of specific changes made to each Lambda function"],
+                - "instrumentation_type": "datadog_lambda_instrumentation"
+
+            CONTEXT
+            ---
+
+            Documentation for installing Datadog on AWS Lambda:
+            {documentation}
+
+            The file you are updating is:
+            {file_path}
+
+            The code in the file, which you must modify to install Datadog, is the following:
+            {file_content}
             """),
             ("human", "Instrument this CDK code with Datadog:\n{code}")
         ])
@@ -123,7 +132,19 @@ class FunctionInstrumenter:
             InstrumentationResult containing the modified code and change information
         """
         try:
-            result = self.cdk_chain.invoke({"code": cdk_script_file.page_content})
+            prompt = self.cdk_prompt.format(
+                documentation=dd_documentation["documentation"].content,
+                file_path=cdk_script_file.metadata['source'],
+                file_content=cdk_script_file.page_content,
+                code=cdk_script_file.page_content
+            )
+            print(prompt)
+            result = self.cdk_chain.invoke({
+                "documentation": dd_documentation["documentation"].content,
+                "file_path": cdk_script_file.metadata['source'],
+                "file_content": cdk_script_file.page_content,
+                "code": cdk_script_file.page_content
+            })
             self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return result
         except Exception as e:
