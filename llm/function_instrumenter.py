@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from util.document import Document
 from util.document_retriever import DocSection
+from util.prompt_loader import load_prompt_template, parse_json_response
 from llm import BaseLLMClient
 
 
@@ -37,8 +38,7 @@ class FunctionInstrumenter(BaseLLMClient):
         Args:
             cdk_script_file: Document containing CDK file content
             dd_documentation: Datadog documentation sections
-            additional_context: Optional additional context from the user
-            
+
         Returns:
             InstrumentationResult containing the modified code and change information
         """
@@ -48,80 +48,24 @@ class FunctionInstrumenter(BaseLLMClient):
             for section_name, section in dd_documentation.items()
         ])
 
-        prompt = f"""You are a Datadog Monitoring installation wizard, a master AI programming
-            assistant that installs Datadog Monitoring (metrics, logs, traces) to any
-            AWS Lambda function. You install the Datadog Lambda Extension and Datadog
-            Tracing layer to all Lambda functions. You also set the DD_ENV, DD_SERVICE,
-            and DD_VERSION environment variables.
+        prompt = load_prompt_template(
+            "instrument_cdk",
+            formatted_docs=formatted_docs,
+            file_path=cdk_script_file.metadata['source'],
+            file_content=cdk_script_file.page_content
+        )
 
-            Your task is to update the CDK stack file to install Datadog according to the documentation.
-            Do not return a diff — you should return the entire, COMPLETE file content without any abbreviations / sections omitted.
-
-            Rules:
-            - Preserve the existing code formatting and style.
-            - Only make the changes required by the documentation.
-            - If no changes are needed, return the file as-is.
-            - If the current file is empty, and you think it should be created, you can add the contents of the new file.
-            - The file structure of the project may be different than the documentation, you should follow the file structure of the project.
-            - Use relative imports if you are unsure what the project import paths are.
-            - It's okay not to edit a file if it's not needed (e.g. if you have already edited another one or this one is not needed).
-            - Return the full, final modified code in file_changes
-
-            You must respond with ONLY a dict object containing (do not format as json):
-            {{
-            "file_changes": {{
-                "{cdk_script_file.metadata['source']}": "the complete modified file content"
-            }},
-            "instrumentation_type": "datadog_lambda_instrumentation"
-            }}
-
-            CONTEXT
-            ---
-
-            Documentation for installing Datadog on AWS Lambda:
-            {formatted_docs}
-
-            The file you are updating is:
-            {cdk_script_file.metadata['source']}
-
-            The code in the file, which you must modify to install Datadog, is the following:
-            {cdk_script_file.page_content}
-
-            Also consider the following optional customization instructions from the user:
-            {additional_context}
-
-            ---
-
-            Instrument this CDK code with Datadog.
-"""
-        
         try:
             result_text = self.make_completion(prompt)
-            
+
             self.logger.info(f"🔍 OpenAI response length: {len(result_text) if result_text else 0}")
             self.logger.info(f"🔍 OpenAI response preview: {result_text[:200] if result_text else 'None'}...")
-            
+
             if not result_text or not result_text.strip():
                 raise ValueError("OpenAI returned empty response")
-            
-            # Try to extract JSON from the response if it contains extra text
-            result_text = result_text.strip()
-            if result_text.startswith("```json"):
-                # Extract JSON from code block
-                start = result_text.find("{")
-                end = result_text.rfind("}") + 1
-                if start != -1 and end != 0:
-                    result_text = result_text[start:end]
-            elif not result_text.startswith("{"):
-                # Try to find JSON in the response
-                start = result_text.find("{")
-                end = result_text.rfind("}") + 1
-                if start != -1 and end != 0:
-                    result_text = result_text[start:end]
-                else:
-                    raise ValueError(f"No JSON found in OpenAI response: {result_text[:500]}")
 
-            result_dict = json.loads(result_text)
+
+            result_dict = parse_json_response(result_text)
 
             self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
@@ -132,7 +76,7 @@ class FunctionInstrumenter(BaseLLMClient):
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
-            
+
     def instrument_terraform_file(self, file_path: str, code: str) -> InstrumentationResult:
         """
         Instrument a Terraform file with Datadog Lambda instrumentation.
@@ -144,62 +88,15 @@ class FunctionInstrumenter(BaseLLMClient):
         Returns:
             InstrumentationResult containing the modified code and change information
         """
-        prompt = f"""You are an expert at instrumenting Terraform code with Datadog.
-Your task is to analyze and modify Terraform code to add Datadog instrumentation to all Lambda functions.
-
-Key requirements:
-- Add Datadog Lambda Extension layer to all Lambda functions
-- Add Datadog Tracing layer to all Lambda functions
-- Set DD_ENV, DD_SERVICE, and DD_VERSION environment variables
-- Add necessary provider configurations
-- Ensure proper error handling
-- Maintain existing functionality
-- Follow Terraform best practices
-
-For each Lambda function, you must:
-1. Add the Datadog Lambda Extension layer (arn:aws:lambda:{{region}}:464622532012:layer:Datadog-Extension:latest)
-2. Add the Datadog Tracing layer (arn:aws:lambda:{{region}}:464622532012:layer:dd-trace-py:latest)
-3. Set environment variables:
-   - DD_ENV: based on the environment variable or 'dev' if not specified
-   - DD_SERVICE: based on the function name
-   - DD_VERSION: based on the version variable or '1.0.0' if not specified
-
-You must respond with ONLY a JSON object containing:
-{{
-    "file_changes": {{"{file_path}": "the complete modified code with Datadog instrumentation"}},
-    "instrumentation_type": "datadog_lambda_instrumentation"
-}}
-
-Instrument this Terraform code with Datadog:
-{code}"""
+        prompt = load_prompt_template(
+            "instrument_terraform",
+            file_path=file_path,
+            code=code
+        )
 
         try:
             result_text = self.make_completion(prompt)
-            
-            self.logger.info(f"🔍 OpenAI response length: {len(result_text) if result_text else 0}")
-            self.logger.info(f"🔍 OpenAI response preview: {result_text[:200] if result_text else 'None'}...")
-            
-            if not result_text or not result_text.strip():
-                raise ValueError("OpenAI returned empty response")
-            
-            # Try to extract JSON from the response if it contains extra text
-            result_text = result_text.strip()
-            if result_text.startswith("```json"):
-                # Extract JSON from code block
-                start = result_text.find("{")
-                end = result_text.rfind("}") + 1
-                if start != -1 and end != 0:
-                    result_text = result_text[start:end]
-            elif not result_text.startswith("{"):
-                # Try to find JSON in the response
-                start = result_text.find("{")
-                end = result_text.rfind("}") + 1
-                if start != -1 and end != 0:
-                    result_text = result_text[start:end]
-                else:
-                    raise ValueError(f"No JSON found in OpenAI response: {result_text[:500]}")
-
-            result_dict = json.loads(result_text)
+            result_dict = parse_json_response(result_text)
 
             self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)

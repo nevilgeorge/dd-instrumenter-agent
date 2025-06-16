@@ -5,6 +5,7 @@ from typing import Dict, List
 import openai
 from pydantic import BaseModel, Field
 
+from util.prompt_loader import load_prompt_template, parse_json_response
 from llm import BaseLLMClient
 
 
@@ -42,36 +43,15 @@ class PRDescriptionGenerator(BaseLLMClient):
         Returns:
             PRDescription containing title, description, and summary
         """
-        prompt = f"""You are an expert at creating clear, professional pull request descriptions for infrastructure code changes.
-Your task is to analyze the git diff and generate a comprehensive PR description that explains what was modified and why.
+        prompt = load_prompt_template(
+            "generate_pr_description",
+            file_names=', '.join(file_names),
+            git_diff=git_diff
+        )
 
-Focus on:
-- Clear, concise title that summarizes the main change
-- Detailed description explaining the purpose of the changes
-- Key technical changes made to each file based on the diff
-- Benefits of the instrumentation added
-
-The changes involve adding Datadog instrumentation to Lambda functions in Infrastructure as Code (IaC) files.
-
-You must respond with ONLY a JSON object containing:
-{{
-    "title": "A concise title for the pull request",
-    "description": "A comprehensive description explaining the changes and their purpose",
-    "summary": ["List of key changes made in bullet points"]
-}}
-
-Analyze this git diff and generate a PR description:
-
-Files changed: {', '.join(file_names)}
-
-Git diff:
-{git_diff}
-
-Generate a professional PR description for these Datadog instrumentation changes based on the actual diff."""
-        
         try:
             result_text = self.make_completion(prompt)
-            result_dict = json.loads(result_text)
+            result_dict = parse_json_response(result_text)
 
             self.logger.debug("Successfully generated PR description from git diff")
 
