@@ -4,35 +4,75 @@ A FastAPI-based server for the DD Instrumenter Agent.
 
 ## Setup
 
-1. Create a virtual environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Unix/macOS
-# or
-.\venv\Scripts\activate  # On Windows
-```
-
+1. Clone this repository
 2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Running the Server
-
-To start the server, run:
+3. Set up environment variables:
 ```bash
-python main.py
+export OPENAI_API_KEY="your_openai_api_key"
 ```
 
-The server will start on `http://localhost:8000`
+## API Endpoints
 
-## Available Endpoints
+### GET /health
+Health check endpoint that returns service status.
 
-- `GET /`: Root endpoint that returns a welcome message
-- `GET /health`: Health check endpoint that returns the server status
+### GET /read-repository
+Analyzes a GitHub repository to determine its infrastructure type and instruments Lambda functions with Datadog.
 
-## API Documentation
+Query Parameters:
+- `repository`: URL of the GitHub repository to analyze (e.g., "https://github.com/username/repo-name")
 
-Once the server is running, you can access:
-- Swagger UI documentation at `http://localhost:8000/docs`
-- ReDoc documentation at `http://localhost:8000/redoc` 
+Response (JSON):
+```json
+{
+    "repository": {
+        "name": "repo-name",
+        "clone_url": "https://github.com/username/repo-name.git",
+        ...
+    },
+    "received_at": "2024-03-14T12:00:00Z",
+    "cloned_path": "/path/to/cloned/repo",
+    "analysis": {
+        "type": "cdk|terraform|neither",
+        "confidence": 0.95,
+        "evidence": ["Found cdk.json", "Found aws-cdk-lib dependency"],
+        "cdk_script_file": "path/to/cdk/app.py",
+        "terraform_script_file": "path/to/main.tf"
+    }
+}
+```
+
+If the repository contains AWS Lambda functions, they will be automatically instrumented with:
+- Datadog Lambda Extension layer
+- Datadog Tracing layer
+- Required Datadog environment variables (DD_ENV, DD_SERVICE, DD_VERSION)
+
+## Running the Service
+
+Start the service with:
+```bash
+uvicorn main:app --reload
+```
+
+The service will be available at `http://localhost:8000`
+
+## Development
+
+The service uses:
+- FastAPI for the web framework
+- LangChain for AI analysis
+- OpenAI GPT-3.5 for repository analysis and code instrumentation
+- GitHub API for repository access
+- Datadog for Lambda function instrumentation
+
+## Environment Variables
+
+- `OPENAI_API_KEY`: OpenAI API key for AI analysis and instrumentation
+
+## Security
+
+- GitHub token and OpenAI API key are required as environment variables

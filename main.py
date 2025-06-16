@@ -78,11 +78,13 @@ async def read_repository(
         documents = repo_parser.read_repository_files(cloned_path)
         # Analyze repository type
         analysis = repo_analyzer.analyze_repo(documents)
-        # Find file contents to update.
+        # Instrument the code with Datadog.
         if analysis.repo_type == "cdk":
             cdk_script_file = repo_parser.find_document_by_filename(documents, analysis.cdk_script_file)
+            instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file.metadata['source'], cdk_script_file.page_content)
         elif analysis.repo_type == "terraform":
             terraform_script_file = repo_parser.find_document_by_filename(documents, analysis.terraform_script_file)
+            instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content)
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
         
