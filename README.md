@@ -15,6 +15,11 @@ pip install -r requirements.txt
 export OPENAI_API_KEY="your_openai_api_key"
 ```
 
+
+```bash
+export GITHUB_TOKEN="your_github_token"
+```
+
 ## API Endpoints
 
 ### GET /health
@@ -72,6 +77,7 @@ The service uses:
 ## Environment Variables
 
 - `OPENAI_API_KEY`: OpenAI API key for AI analysis and instrumentation
+- `GITHUB_TOKEN`: Github Token allows circumventing Github API rate limits
 
 ## Security
 

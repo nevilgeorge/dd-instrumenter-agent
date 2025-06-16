@@ -5,6 +5,8 @@ from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 import logging
+from document_retriever import DocSection
+from langchain.schema import Document
 
 class InstrumentationResult(BaseModel):
     """Schema for instrumentation output."""
@@ -109,7 +111,7 @@ class FunctionInstrumenter:
             verbose=True
         )
     
-    def instrument_cdk_file(self, file_path: str, code: str) -> InstrumentationResult:
+    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection]) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
         
@@ -121,11 +123,11 @@ class FunctionInstrumenter:
             InstrumentationResult containing the modified code and change information
         """
         try:
-            result = self.cdk_chain.invoke({"code": code})
-            self.logger.info(f"Successfully instrumented CDK file with Datadog: {file_path}")
+            result = self.cdk_chain.invoke({"code": cdk_script_file.page_content})
+            self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return result
         except Exception as e:
-            self.logger.error(f"Error instrumenting CDK file {file_path}: {str(e)}")
+            self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
     
     def instrument_terraform_file(self, file_path: str, code: str) -> InstrumentationResult:
