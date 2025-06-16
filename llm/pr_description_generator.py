@@ -68,12 +68,13 @@ Git diff:
 {git_diff}
 
 Generate a professional PR description for these Datadog instrumentation changes based on the actual diff."""
-
+        
         try:
             result_text = self.make_completion(prompt)
             result_dict = json.loads(result_text)
 
             self.logger.debug("Successfully generated PR description from git diff")
+
             return PRDescription(**result_dict)
         except Exception as e:
             self.logger.error(f"Error generating PR description from diff: {str(e)}")
