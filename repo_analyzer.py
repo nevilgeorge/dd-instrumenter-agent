@@ -5,7 +5,6 @@ from langchain.schema import Document
 from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
-import logging
 import os
 
 

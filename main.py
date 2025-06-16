@@ -57,7 +57,8 @@ async def health_check():
 @app.get("/read-repository")
 async def read_repository(
     repository: str,
-    repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer)
+    repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer),
+    function_instrumenter: FunctionInstrumenter = Depends(get_function_instrumenter)
 ):
     """
     Endpoint that fetches repository details from Github's API, clones the repo,
