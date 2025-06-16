@@ -80,7 +80,9 @@ async def read_repository(
             "analysis": {
                 "type": analysis.repo_type,
                 "confidence": analysis.confidence,
-                "evidence": analysis.evidence
+                "evidence": analysis.evidence,
+                "cdk_script_file": analysis.cdk_script_file,
+                "terraform_script_file": analysis.terraform_script_file
             }
         }
     except Exception as e:

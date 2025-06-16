@@ -14,6 +14,8 @@ class RepoType(BaseModel):
     repo_type: Literal["cdk", "terraform", "neither"] = Field(description="The type of infrastructure as code project")
     confidence: float = Field(description="Confidence score between 0 and 1")
     evidence: List[str] = Field(description="List of evidence found in the repository that led to this conclusion")
+    cdk_script_file: str = Field(description="The name of the file that contains the CDK script")
+    terraform_script_file: str = Field(description="The name of the file that contains the Terraform script")
 
 class RepoAnalyzer:
     """
@@ -36,6 +38,8 @@ class RepoAnalyzer:
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an expert at analyzing code repositories to determine their infrastructure type.
             Analyze the following repository contents and determine if it's a CDK project, Terraform project, or neither.
+            If a CDK project is detected, look for the cdk.json file and the CDK app files.
+            If a Terraform project is detected, look for the .tf files, terraform.tfstate, and .tfvars files.
             
             Look for key indicators:
             - CDK: presence of cdk.json, CDK app files, aws-cdk-lib dependencies
@@ -45,6 +49,8 @@ class RepoAnalyzer:
                 - "repo_type": ["cdk", "terraform", "neither"],
                 - "confidence": 0.95,
                 - "evidence": ["Found cdk.json", "Found aws-cdk-lib dependency"]
+                - "cdk_script_file": the name of the file that contains the CDK script (if detected), empty string if not detected
+                - "terraform_script_file": the name of the file that contains the Terraform script (if detected), empty string if not detected
             
             
             The repo_type must be exactly one of: "cdk", "terraform", or "neither"
