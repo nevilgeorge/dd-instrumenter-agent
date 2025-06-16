@@ -39,6 +39,9 @@ class GithubClient:
         }
         if self.token:
             self.headers["Authorization"] = f"token {self.token}"
+            self.github = Github(self.token)
+        else:
+            self.github = None
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """

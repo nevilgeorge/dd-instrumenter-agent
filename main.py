@@ -154,7 +154,7 @@ async def instrument(
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
 
-        logger.info(f"Instrumented code {instrumented_code}")
+        logger.info(f"Instrumented code!")
 
         repo_parts = repository.split("/")
         if len(repo_parts) != 2:
