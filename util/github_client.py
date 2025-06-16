@@ -35,6 +35,10 @@ class GithubClient:
             self.logger.warning("No GitHub token provided. Public repositories will work with rate limits. Private repositories will require authentication.")
             self.github = Github()
         else:
+            if access_token:
+                self.logger.info("Using OAuth access token for GitHub authentication")
+            else:
+                self.logger.info("Using personal access token for GitHub authentication")
             self.github = Github(self.token)
 
     def _normalize_repository_name(self, repository: str) -> str:

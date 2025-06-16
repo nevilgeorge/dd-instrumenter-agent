@@ -78,10 +78,37 @@ Instrument this CDK code with Datadog:
             )
 
             result_text = response.choices[0].message.content
+            self.logger.info(f"🔍 OpenAI response length: {len(result_text) if result_text else 0}")
+            self.logger.info(f"🔍 OpenAI response preview: {result_text[:200] if result_text else 'None'}...")
+            
+            if not result_text or not result_text.strip():
+                raise ValueError("OpenAI returned empty response")
+            
+            # Try to extract JSON from the response if it contains extra text
+            result_text = result_text.strip()
+            if result_text.startswith("```json"):
+                # Extract JSON from code block
+                start = result_text.find("{")
+                end = result_text.rfind("}") + 1
+                if start != -1 and end != 0:
+                    result_text = result_text[start:end]
+            elif not result_text.startswith("{"):
+                # Try to find JSON in the response
+                start = result_text.find("{")
+                end = result_text.rfind("}") + 1
+                if start != -1 and end != 0:
+                    result_text = result_text[start:end]
+                else:
+                    raise ValueError(f"No JSON found in OpenAI response: {result_text[:500]}")
+
             result_dict = json.loads(result_text)
 
             self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON parsing error for CDK file {cdk_script_file.metadata['source']}: {str(e)}")
+            self.logger.error(f"Raw OpenAI response: {result_text if 'result_text' in locals() else 'No response'}")
+            raise ValueError(f"Failed to parse OpenAI response as JSON: {str(e)}")
         except Exception as e:
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
@@ -134,10 +161,37 @@ Instrument this Terraform code with Datadog:
             )
 
             result_text = response.choices[0].message.content
+            self.logger.info(f"🔍 OpenAI response length: {len(result_text) if result_text else 0}")
+            self.logger.info(f"🔍 OpenAI response preview: {result_text[:200] if result_text else 'None'}...")
+            
+            if not result_text or not result_text.strip():
+                raise ValueError("OpenAI returned empty response")
+            
+            # Try to extract JSON from the response if it contains extra text
+            result_text = result_text.strip()
+            if result_text.startswith("```json"):
+                # Extract JSON from code block
+                start = result_text.find("{")
+                end = result_text.rfind("}") + 1
+                if start != -1 and end != 0:
+                    result_text = result_text[start:end]
+            elif not result_text.startswith("{"):
+                # Try to find JSON in the response
+                start = result_text.find("{")
+                end = result_text.rfind("}") + 1
+                if start != -1 and end != 0:
+                    result_text = result_text[start:end]
+                else:
+                    raise ValueError(f"No JSON found in OpenAI response: {result_text[:500]}")
+
             result_dict = json.loads(result_text)
 
             self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON parsing error for Terraform file {file_path}: {str(e)}")
+            self.logger.error(f"Raw OpenAI response: {result_text if 'result_text' in locals() else 'No response'}")
+            raise ValueError(f"Failed to parse OpenAI response as JSON: {str(e)}")
         except Exception as e:
             self.logger.error(f"Error instrumenting Terraform file {file_path}: {str(e)}")
             raise

@@ -47,13 +47,22 @@ async function logout() {
 }
 
 // Show authentication flow
-function showAuthFlow(repository, authUrl) {
+function showAuthFlow(repository, authUrl, errorData = {}) {
     const resultDiv = document.getElementById('result');
+    
+    let message = "You don't have access to the repository";
+    let details = "Please authenticate with GitHub to grant access:";
+    
+    if (errorData.error === 'repository_push_denied') {
+        message = "You don't have push access to the repository";
+        details = "Please authenticate with GitHub to grant write permissions:";
+    }
+    
     resultDiv.innerHTML = `
         <div class="result auth-required">
             <h3>🔒 Authentication Required</h3>
-            <p>You don't have access to the repository <strong>${repository}</strong>.</p>
-            <p>Please authenticate with GitHub to grant access:</p>
+            <p>${message} <strong>${repository}</strong>.</p>
+            <p>${details}</p>
             <div style="text-align: center; margin: 20px 0;">
                 <a href="${authUrl}" class="auth-btn">
                     🔗 Authenticate with GitHub
@@ -204,9 +213,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     resultDiv.appendChild(linkDiv);
                 }
                 
-            } else if (response.status === 403 && data.error === 'repository_access_denied') {
+            } else if (response.status === 403 && (data.error === 'repository_access_denied' || data.error === 'repository_push_denied')) {
                 // Authentication required
-                showAuthFlow(cleanRepo, data.auth_url);
+                showAuthFlow(cleanRepo, data.auth_url, data);
             } else {
                 // Other errors
                 resultDiv.innerHTML = `

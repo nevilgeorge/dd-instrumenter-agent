@@ -136,8 +136,14 @@ def get_document_retriever() -> DocumentRetriever:
 def get_user_token(request: Request) -> Optional[str]:
     """Extract user token from session/cookies."""
     session_id = request.cookies.get("session_id")
-    if session_id and session_id in user_tokens:
-        return user_tokens[session_id]
+    logger.info(f"🔍 Session ID from cookie: {'YES' if session_id else 'NO'}")
+    if session_id:
+        logger.info(f"🔍 Session ID: {session_id[:10]}...")
+        logger.info(f"🔍 Token exists for session: {'YES' if session_id in user_tokens else 'NO'}")
+        if session_id in user_tokens:
+            token = user_tokens[session_id]
+            logger.info(f"🔍 Retrieved token starts with: {token[:10]}...")
+            return token
     return None
 
 @app.get("/")
@@ -233,14 +239,29 @@ async def github_callback(code: str, state: str, response: Response):
         
         # Store the access token for this session
         user_tokens[session_id] = access_token
+        logger.info(f"🔍 Stored token for session {session_id[:10]}...")
+        logger.info(f"🔍 Token starts with: {access_token[:10]}...")
+        logger.info(f"🔍 Total stored sessions: {len(user_tokens)}")
         
         # Clean up OAuth session
         del oauth_sessions[state]
         
         logger.info(f"✅ GitHub OAuth successful for repository: {repository}")
         
-        # Redirect back to frontend with success message
-        return RedirectResponse(url=f"/?auth=success&repository={repository}")
+        # ⚠️ CRITICAL FIX: Create redirect response with cookie set properly  
+        redirect_response = RedirectResponse(url=f"/?auth=success&repository={repository}")
+        redirect_response.set_cookie(
+            key="session_id",
+            value=session_id, 
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=3600,  # 1 hour
+            path="/"  # Ensure cookie is available for all paths
+        )
+        logger.info(f"🔍 Setting session cookie: {session_id[:10]}... on redirect response")
+        
+        return redirect_response
         
     except Exception as e:
         logger.error(f"❌ GitHub OAuth error: {e}")
@@ -316,6 +337,9 @@ async def instrument(
     try:
         # Get user's access token
         access_token = get_user_token(request)
+        logger.info(f"🔍 Access token retrieved: {'YES' if access_token else 'NO'}")
+        if access_token:
+            logger.info(f"🔍 Access token starts with: {access_token[:10]}...")
         
         # Initialize GitHub client with token if available
         github_client = get_github_client(access_token)
@@ -324,13 +348,17 @@ async def instrument(
         try:
             cloned_path = github_client.clone_repository(repository, target_dir="temp_clone")
         except Exception as clone_error:
-            # If clone fails due to permissions, suggest OAuth
-            if "Permission denied" in str(clone_error) or "authentication failed" in str(clone_error).lower():
+            # If clone fails due to permissions or not found (private repo), suggest OAuth
+            error_str = str(clone_error).lower()
+            if ("permission denied" in error_str or 
+                "authentication failed" in error_str or 
+                "404" in error_str or 
+                "not found" in error_str):
                 return JSONResponse(
                     status_code=403,
                     content={
                         "error": "repository_access_denied",
-                        "message": "You don't have access to this repository. Please authenticate with GitHub.",
+                        "message": "You don't have access to this repository. Please authenticate with GitHub to grant access.",
                         "auth_url": f"/auth/github?repository={repository}",
                         "repository": repository
                     }
@@ -374,13 +402,31 @@ async def instrument(
         repo_owner, repo_name = repo_parts
 
         # Step 5: Generate pull request
-        pr_result = github_client.generate_pull_request(
-            repo_path=cloned_path,
-            repo_owner=repo_owner,
-            repo_name=repo_name,
-            instrumentation_result=instrumented_code,
-            pr_generator=pr_generator
-        )
+        try:
+            pr_result = github_client.generate_pull_request(
+                repo_path=cloned_path,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                instrumentation_result=instrumented_code,
+                pr_generator=pr_generator
+            )
+        except Exception as pr_error:
+            # Check if it's a 403 permission error during git push
+            error_str = str(pr_error).lower()
+            if "403" in error_str or "permission denied" in error_str or "authentication failed" in error_str:
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "repository_push_denied",
+                        "message": "You don't have push access to this repository. Please authenticate with GitHub to grant write permissions.",
+                        "auth_url": f"/auth/github?repository={repository}",
+                        "repository": repository,
+                        "phase": "push"
+                    }
+                )
+            else:
+                # Re-raise if it's not an auth error
+                raise pr_error
 
         logger.info(f"Pull request result {json.dumps(pr_result, indent=2)}")
 
