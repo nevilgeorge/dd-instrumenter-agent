@@ -85,13 +85,14 @@ async def health_check():
         status_code=200
     )
 
-@app.get("/read-repository")
-async def read_repository(
+@app.get("/instrument")
+async def instrument(
     repository: str,
     github_client: GithubClient = Depends(get_github_client),
     repo_analyzer: RepoAnalyzer = Depends(get_repo_analyzer),
     function_instrumenter: FunctionInstrumenter = Depends(get_function_instrumenter),
-    document_retriever: DocumentRetriever = Depends(get_document_retriever)
+    document_retriever: DocumentRetriever = Depends(get_document_retriever),
+    pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator)
 ):
     """
     Endpoint that fetches repository details from Github's API, clones the repo,
@@ -134,6 +135,20 @@ async def read_repository(
         else:
             raise HTTPException(status_code=500, detail="Repository type not supported.")
 
+        repo_parts = repository.split("/")
+        if len(repo_parts) != 2:
+            raise HTTPException(status_code=400, detail="Repository must be in format 'owner/repo'")
+        repo_owner, repo_name = repo_parts
+
+        # Step 5: Generate pull request
+        pr_result = github_client.generate_pull_request(
+            repo_path=cloned_path,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            instrumentation_result=instrumented_code,
+            pr_generator=pr_generator
+        )
+
         return {
             "repository": repo_details,
             "received_at": datetime.now(timezone.utc).isoformat(),
@@ -145,43 +160,10 @@ async def read_repository(
                 "cdk_script_file": analysis.cdk_script_file,
                 "terraform_script_file": analysis.terraform_script_file,
                 "runtime": analysis.runtime
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
-
-@app.post("/generate-pull-request")
-async def generate_pull_request(
-    repository: str,
-    instrumentation_result: InstrumentationResult,
-    github_client: GithubClient = Depends(get_github_client),
-    pr_generator: PRDescriptionGenerator = Depends(get_pr_description_generator)
-):
-    """
-    Complete workflow: clone repo, analyze, instrument, and create PR.
-    """
-    try:
-        # Step 4: Extract repo owner/name for PR creation
-        repo_parts = repository.split("/")
-        if len(repo_parts) != 2:
-            raise HTTPException(status_code=400, detail="Repository must be in format 'owner/repo'")
-        repo_owner, repo_name = repo_parts
-
-        # Step 5: Generate pull request
-        pr_result = github_client.generate_pull_request(
-            repo_path=cloned_path,
-            repo_owner=repo_owner,
-            repo_name=repo_name,
-            instrumentation_result=instrumentation_result,
-            pr_generator=pr_generator
-        )
-
-        return {
-            "repository": repository,
+            },
             "pull_request": pr_result,
             "completed_at": datetime.now(timezone.utc).isoformat()
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 

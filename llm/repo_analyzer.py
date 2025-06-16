@@ -15,6 +15,13 @@ class RepoType(BaseModel):
     terraform_script_file: str = Field(description="The name of the file that contains the Terraform script")
     runtime: str = Field(description="The runtime of the Lambda function")
 
+
+class RelevantFiles(BaseModel):
+    """Schema for relevant files analysis output."""
+    files_to_modify: List[str] = Field(description="List of file paths that need to be modified")
+    files_to_create: List[str] = Field(description="List of new file paths that need to be created")
+    reasoning: List[str] = Field(description="List of reasoning for why each file was selected")
+
 class RepoAnalyzer:
     """
     Analyzes repository contents to determine if it's a CDK, Terraform, or neither.
@@ -83,3 +90,68 @@ Analyze this repository. Return ONLY the JSON object, no other text."""
         except Exception as e:
             print(f"Error analyzing repository: {str(e)}")
             raise 
+
+    def filter_relevant_files(self, file_list: List[str], documentation: str, 
+                            integration_name: str, integration_rules: str = "") -> RelevantFiles:
+        """
+        Filter files that are relevant for integration modifications.
+        
+        Args:
+            file_list: List of file paths from the repository
+            documentation: Installation documentation for reference
+            integration_name: Name of the integration (e.g., "PostHog", "Datadog")
+            integration_rules: Additional rules for filtering files
+            
+        Returns:
+            RelevantFiles object containing filtered files and reasoning
+        """
+        # Format file list for the prompt
+        formatted_file_list = "\n".join(file_list)
+        
+        prompt = f"""You are a {integration_name} installation wizard, a master AI programming assistant that implements {integration_name} for projects.
+Given the following list of file paths from a project, determine which files are likely to require modifications 
+to integrate {integration_name}. Use the installation documentation as a reference for what files might need modifications, do not include files that are unlikely to require modification based on the documentation.
+
+- If you would like to create a new file, you can include the file path in your response.
+- If you would like to modify an existing file, you can include the file path in your response.
+
+You should return all files that you think will be required to look at or modify to integrate {integration_name}. You should return them in the order you would like to see them processed, with new files first, followed by the files that you want to update to integrate {integration_name}.
+
+Rules:
+- Only return files that you think will be required to look at or modify to integrate {integration_name}.
+- Do not return files that are unlikely to require modification based on the documentation.
+- If you are unsure, return the file, since it's better to have more files than less.
+- If two files might include the content you need to edit, return both.
+- If you create a new file, it should not conflict with any existing files.
+- If the user is using TypeScript, you should return .ts and .tsx files.
+- The file structure of the project may be different than the documentation, you should follow the file structure of the project. e.g. if there is an existing file containing providers, you should edit that file instead of creating a new one.
+{integration_rules}
+- Look for existing files that contain providers, components, hooks, etc. and edit those files instead of creating new ones if appropriate.
+
+Installation documentation:
+{documentation}
+
+All current files in the repository:
+{formatted_file_list}
+
+You must respond with ONLY a JSON object with the following keys only (no other text):
+    - "files_to_modify": ["file1.ts", "file2.js"] - existing files that need modification
+    - "files_to_create": ["new_file.ts"] - new files that need to be created  
+    - "reasoning": ["reason1", "reason2"] - explanations for each file selection
+
+Return ONLY the JSON object, no other text."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="openai/gpt-3.5-turbo",
+                stream=False,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            result_text = response.choices[0].message.content
+            result_dict = json.loads(result_text)
+            
+            return RelevantFiles(**result_dict)
+        except Exception as e:
+            print(f"Error filtering relevant files: {str(e)}")
+            raise
