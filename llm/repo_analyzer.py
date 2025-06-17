@@ -61,46 +61,22 @@ class RepoAnalyzer(BaseLLMClient):
             self.logger.error(f"Error analyzing repository: {str(e)}")
             raise
 
-    def _format_tree_structure(self, tree: Dict[str, Any], indent: str = "") -> str:
+    def _format_tree_structure(self, tree: Dict[str, Any], prefix: str = "") -> str:
         """
-        Format the tree structure as a readable string with file contents.
+        Format the tree structure similar to ls -d -- */* output.
         """
         result = []
-        
+
         for name, node in tree.items():
             if isinstance(node, Document):
-                # File - show path and key content snippets
-                source = node.metadata.get('source', name)
-                result.append(f"{indent}📄 {name}")
-                result.append(f"{indent}   Path: {source}")
-                
-                # Add relevant content snippets for analysis
-                content = node.page_content
-                if any(keyword in content.lower() for keyword in ['cdk', 'aws-cdk', 'terraform', 'resource', 'stack']):
-                    lines = content.split('\n')[:10]  # First 10 lines for context
-                    result.append(f"{indent}   Content preview:")
-                    for line in lines:
-                        if line.strip():
-                            result.append(f"{indent}     {line[:100]}")  # Truncate long lines
+                # File
+                result.append(f"{prefix}{name}")
             elif isinstance(node, dict):
                 # Directory
-                result.append(f"{indent}📁 {name}/")
-                result.append(self._format_tree_structure(node, indent + "  "))
-        
-        return "\n".join(result)
+                result.append(f"{prefix}{name}/")
+                # Recursively add contents with updated prefix
+                nested_result = self._format_tree_structure(node, f"{prefix}{name}/")
+                if nested_result:
+                    result.append(nested_result)
 
-    def _get_all_documents(self, tree: Dict[str, Any]) -> List[Document]:
-        """
-        Get all Document objects from the tree structure.
-        """
-        documents = []
-        
-        def traverse(node):
-            if isinstance(node, Document):
-                documents.append(node)
-            elif isinstance(node, dict):
-                for value in node.values():
-                    traverse(value)
-        
-        traverse(tree)
-        return documents
+        return "\n".join(result)
