@@ -1,6 +1,6 @@
 import glob
 import os
-from typing import List
+from typing import List, Dict, Any
 
 from util.document import Document
 
@@ -10,19 +10,19 @@ class RepoParser:
     A class that encapsulates logic for parsing repository files.
     """
 
-    def read_repository_files(self, repo_path: str, glob_pattern: str = "**/*") -> List[Document]:
+    def read_repository_files(self, repo_path: str, glob_pattern: str = "**/*") -> Dict[str, Any]:
         """
-        Read files from the repository directory.
+        Read files from the repository directory and build a tree structure.
 
         Args:
             repo_path: Path to the repository directory
             glob_pattern: Pattern to match files (default: all files)
 
         Returns:
-            List of Document objects containing file contents
+            Dict representing the repository tree structure
         """
         try:
-            documents = []
+            tree = {}
             pattern_path = os.path.join(repo_path, glob_pattern)
 
             for file_path in glob.glob(pattern_path, recursive=True):
@@ -39,76 +39,48 @@ class RepoParser:
                                 'filename': os.path.basename(file_path)
                             }
                         )
-                        documents.append(doc)
+                        
+                        # Build tree structure
+                        rel_path = os.path.relpath(file_path, repo_path)
+                        self._add_to_tree(tree, rel_path, doc)
+                        
                     except (UnicodeDecodeError, PermissionError):
                         # Skip binary files and files we can't read
                         continue
 
-            return documents
+            return tree
         except Exception as e:
             raise Exception(f"Failed to read repository files: {str(e)}")
 
-    def find_cdk_stack_file(self, documents: List[Document], runtime: str) -> Document:
+    def _add_to_tree(self, tree: Dict[str, Any], path: str, doc: Document) -> None:
         """
-        Find the CDK stack file by looking for files that contain "extends cdk.Stack".
-        :param documents: List[Document] List of Document objects to search through
-        :return: Document The matching Document object containing the CDK stack definition
-        :raises: Exception if no matching document is found
+        Add a document to the tree structure at the specified path.
         """
-        for doc in documents:
-            if runtime == 'node.js':
-                if "extends cdk.Stack" in doc.page_content:
-                    return doc
-            elif runtime == 'python':
-                if "from aws_cdk import Stack" in doc.page_content:
-                    return doc
-            elif runtime == 'java':
-                if "extends Stack" in doc.page_content:
-                    return doc
-            elif runtime == 'go':
-                if "awscdk.NewStack" in doc.page_content:
-                    return doc
-            elif runtime == 'dotnet':
-                if "using Amazon.CDK;" in doc.page_content:
-                    return doc
-            else:
-                raise Exception(f"Unsupported runtime: {runtime}")
-        raise Exception("Could not find any CDK stack file (no file contains 'extends cdk.Stack')")
+        parts = path.split(os.sep)
+        current = tree
+        
+        # Navigate/create directories
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        # Add the file
+        current[parts[-1]] = doc
 
-    def find_terraform_file(self, documents: List[Document], runtime: str) -> Document:
+
+    def _get_all_documents(self, tree: Dict[str, Any]) -> List[Document]:
         """
-        Find the Terraform file by filtering for documents with .tf file extensions.
-        :param documents: List[Document] List of Document objects to search through
-        :param runtime: str The runtime (not used for Terraform but kept for consistency)
-        :return: Document The matching Document object containing the Terraform configuration
-        :raises: Exception if no matching document is found
+        Get all Document objects from the tree structure.
         """
-        terraform_files = []
+        documents = []
         
-        for doc in documents:
-            # Check if the file has a .tf extension
-            if doc.metadata.get('source', '').endswith('.tf'):
-                terraform_files.append(doc)
+        def traverse(node):
+            if isinstance(node, Document):
+                documents.append(node)
+            elif isinstance(node, dict):
+                for value in node.values():
+                    traverse(value)
         
-        if not terraform_files:
-            raise Exception("Could not find any Terraform files (no files with .tf extension)")
-        
-        # Create a map of file name to document
-        terraform_file_map = {}
-        for doc in terraform_files:
-            file_name = doc.metadata.get('source', '').split('/')[-1]
-            terraform_file_map[file_name] = doc
-
-        if 'main.tf' in terraform_file_map:
-            return terraform_file_map['main.tf']
-
-        resource_files = [doc for doc in terraform_files if 'resource' in doc.page_content]
-        if not resource_files:
-            raise Exception("Could not find any Terraform resource files")
-
-        #TODO: Add support for other resource types. 
-        lambda_resource_files = [doc for doc in resource_files if "aws_lambda_function" in doc.page_content]
-        if lambda_resource_files:
-            return lambda_resource_files[0]
-        
-        return resource_files[0]
+        traverse(tree)
+        return documents
