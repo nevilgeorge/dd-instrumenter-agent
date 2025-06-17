@@ -44,10 +44,11 @@ class FunctionInstrumenter(BaseLLMClient):
         """
         prompt = load_prompt_template(
             "instrument_cdk",
-            formatted_docs=dd_documentation.content,
+            documentation=dd_documentation,
             file_path=cdk_script_file.metadata['source'],
             file_content=cdk_script_file.page_content,
-            runtime=runtime
+            runtime=runtime,
+            additional_context=additional_context,
         )
 
         try:
@@ -62,7 +63,7 @@ class FunctionInstrumenter(BaseLLMClient):
 
             result_dict = parse_json_response(result_text)
 
-            self.logger.debug(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
+            self.logger.info(f"Successfully instrumented CDK file with Datadog: {cdk_script_file.metadata['source']}")
             return InstrumentationResult(**result_dict)
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON parsing error for CDK file {cdk_script_file.metadata['source']}: {str(e)}")
@@ -72,28 +73,35 @@ class FunctionInstrumenter(BaseLLMClient):
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
 
-    def instrument_terraform_file(self, file_path: str, code: str) -> InstrumentationResult:
+    def instrument_terraform_file(self, file_path: str, code: str, dd_documentation: DocSection, runtime: str, additional_context: str) -> InstrumentationResult:
         """
         Instrument a Terraform file with Datadog Lambda instrumentation.
 
         Args:
             file_path: Path to the Terraform file
             code: Content of the Terraform file
+            dd_documentation: Datadog documentation
+            additional_context: Optional additional context from the user
 
         Returns:
             InstrumentationResult containing the modified code and change information
         """
+
         prompt = load_prompt_template(
-            "instrument_terraform",
+           "instrument",
+            file_type="Terraform",
+            documentation=dd_documentation,
             file_path=file_path,
-            code=code
+            file_content=code,
+            runtime="",
+            additional_context=additional_context,
         )
 
         try:
             result_text = self.make_completion(prompt)
             result_dict = parse_json_response(result_text)
 
-            self.logger.debug(f"Successfully instrumented Terraform file with Datadog: {file_path}")
+            self.logger.info(f"Successfully instrumented Terraform file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON parsing error for Terraform file {file_path}: {str(e)}")
