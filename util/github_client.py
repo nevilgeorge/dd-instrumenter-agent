@@ -40,13 +40,13 @@ class GithubClient:
                 self.logger.info("Using personal access token for GitHub authentication")
             self.github = Github(self.token)
 
-    def clone_repository(self, repository: str, target_dir: str = "temp_clone") -> str:
+    def clone_repository(self, repository: str, target_dir: str = None) -> str:
         """
         Clone a repository by name/URL, automatically fetching the clone URL.
 
         Args:
             repository: Repository name in 'owner/repo' format or full GitHub URL
-            target_dir: The target folder (defaults to "temp_clone")
+            target_dir: The target folder (defaults to auto-generated hidden folder with timestamp)
 
         Returns:
             The absolute path of the cloned folder
@@ -61,6 +61,11 @@ class GithubClient:
             # Add authentication to clone URL if token is available
             if self.token:
                 clone_url = clone_url.replace('https://', f'https://{self.token}@')
+
+            # Generate random hidden folder name with timestamp if not provided
+            if not target_dir:
+                timestamp = int(time.time())
+                target_dir = f".dir_{timestamp}"
 
             if os.path.exists(target_dir):
                 shutil.rmtree(target_dir)

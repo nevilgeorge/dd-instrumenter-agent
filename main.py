@@ -1,15 +1,12 @@
-import json
-import logging
-import sys
 import os
 import secrets
-import base64
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone
 import requests
+from ddtrace import llmobs
 
 from config import setup_logging, setup_openai_client
 from routers import health, instrument
@@ -19,6 +16,8 @@ def create_app():
     """Create and configure FastAPI application."""
     logger = setup_logging()
     client = setup_openai_client()
+
+    llmobs.LLMObs.enable(ml_app="dd-instrumenter-agent", agentless_enabled=True)
 
     app = FastAPI(
         title="DD Instrumenter Agent",
@@ -40,7 +39,7 @@ def create_app():
     # In-memory session store (in production, use Redis or database)
     oauth_sessions = {}
     user_tokens = {}
-    
+
     # Store user tokens in app state so dependencies can access them
     app.state.user_tokens = user_tokens
 
@@ -67,21 +66,21 @@ def create_app():
         """Initiate GitHub OAuth flow for accessing a specific repository."""
         if not GITHUB_CLIENT_ID:
             raise HTTPException(status_code=500, detail="GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.")
-        
+
         # Generate a random state for CSRF protection
         state = secrets.token_urlsafe(32)
         session_id = secrets.token_urlsafe(32)
-        
+
         # Store repository and state in session
         oauth_sessions[state] = {
             "repository": repository,
             "session_id": session_id,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        
+
         # Set session cookie
         response.set_cookie("session_id", session_id, httponly=True, secure=False, samesite="lax")
-        
+
         # Build GitHub OAuth URL
         github_auth_url = (
             f"https://github.com/login/oauth/authorize"
@@ -90,7 +89,7 @@ def create_app():
             f"&scope=repo"
             f"&state={state}"
         )
-        
+
         return RedirectResponse(url=github_auth_url)
 
     @app.get("/auth/github/callback")
@@ -100,10 +99,10 @@ def create_app():
             # Verify state parameter
             if state not in oauth_sessions:
                 raise HTTPException(status_code=400, detail="Invalid state parameter")
-            
+
             session_data = oauth_sessions[state]
             session_id = session_data["session_id"]
-            
+
             # Exchange code for access token
             token_url = "https://github.com/login/oauth/access_token"
             token_data = {
@@ -112,36 +111,36 @@ def create_app():
                 "code": code,
                 "state": state
             }
-            
+
             token_response = requests.post(
                 token_url,
                 data=token_data,
                 headers={"Accept": "application/json"}
             )
-            
+
             if token_response.status_code != 200:
                 raise HTTPException(status_code=400, detail="Failed to exchange code for token")
-            
+
             token_info = token_response.json()
             access_token = token_info.get("access_token")
-            
+
             if not access_token:
                 raise HTTPException(status_code=400, detail="No access token received")
-            
+
             # Store the access token
             user_tokens[session_id] = access_token
             logger.info(f"🔍 Stored token for session: {session_id[:10]}...")
-            
+
             # Clean up OAuth session
             del oauth_sessions[state]
-            
+
             # Create redirect response
             redirect_response = RedirectResponse(url="/?auth=success")
-            
+
             # Set the session cookie on the redirect response
             redirect_response.set_cookie(
                 key="session_id",
-                value=session_id, 
+                value=session_id,
                 httponly=True,
                 secure=False,  # Set to True in production with HTTPS
                 samesite="lax",
@@ -149,30 +148,30 @@ def create_app():
                 path="/"  # Ensure cookie is available for all paths
             )
             logger.info(f"🔍 Setting session cookie: {session_id[:10]}... on redirect response")
-            
+
             return redirect_response
-            
+
         except Exception as e:
             logger.error(f"❌ GitHub OAuth error: {e}")
             # Clean up OAuth session
             if state in oauth_sessions:
                 del oauth_sessions[state]
-            
+
             return RedirectResponse(url=f"/?auth=error&message={str(e)}")
 
     @app.get("/auth/status")
     async def auth_status(request: Request):
         """Check if user is authenticated and return their GitHub permissions status."""
         access_token = get_user_token(request)
-        
+
         if not access_token:
             return JSONResponse(content={"authenticated": False})
-        
+
         try:
             # Test the token by making a request to GitHub API
             headers = {"Authorization": f"token {access_token}"}
             response = requests.get("https://api.github.com/user", headers=headers)
-            
+
             if response.status_code == 200:
                 user_data = response.json()
                 return JSONResponse(content={
@@ -186,7 +185,7 @@ def create_app():
                 if session_id and session_id in user_tokens:
                     del user_tokens[session_id]
                 return JSONResponse(content={"authenticated": False})
-                
+
         except Exception as e:
             logger.error(f"Error checking auth status: {e}")
             return JSONResponse(content={"authenticated": False})
@@ -197,10 +196,10 @@ def create_app():
         session_id = request.cookies.get("session_id")
         if session_id and session_id in user_tokens:
             del user_tokens[session_id]
-        
+
         # Clear session cookie
         response.delete_cookie("session_id")
-        
+
         return JSONResponse(content={"message": "Logged out successfully"})
 
     # Include routers

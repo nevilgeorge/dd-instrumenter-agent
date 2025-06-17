@@ -41,4 +41,6 @@ You must respond with ONLY a JSON object containing:
 
 ## Here is its current file contents:
 
+```{runtime}
 {file_content}
+```

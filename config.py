@@ -21,8 +21,22 @@ def setup_logging():
         }
     ))
 
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
-    return logging.getLogger(__name__)
+    # Get log level from environment variable, default to INFO
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+    # Validate log level
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if log_level not in valid_levels:
+        log_level = "INFO"
+
+    # Convert string log level to logging constant
+    numeric_level = getattr(logging, log_level, logging.INFO)
+    logging.basicConfig(level=numeric_level, handlers=[handler])
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging level set to {log_level}")
+
+    return logger
 
 
 def setup_openai_client():
@@ -63,4 +77,11 @@ def setup_openai_client():
             raise ValueError("No valid authentication method available - DD internal auth failed and no OPENAI_API_KEY set")
 
         logger.info("Successfully configured OpenAI client with API key")
-        return openai.OpenAI(api_key=api_key)
+        return openai.OpenAI(
+            api_key=api_key,
+            base_url=f"{host}/v1",
+            default_headers={
+                "source": "dd-instrumenter-agent",
+                "org-id": "2",
+            },
+        )
