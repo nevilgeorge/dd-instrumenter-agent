@@ -8,13 +8,14 @@ Do not return a diff — you should return the entire, COMPLETE file content wit
 ## Rules
 
 - Preserve the existing code formatting and style.
-- Only make the changes required by the documentation.
+- Only make the changes required by the documentation based on instructions above.
 - If no changes are needed, return the file as-is.
 - If the current file is empty, and you think it should be created, you can add the contents of the new file.
 - The file structure of the project may be different than the documentation, you should follow the file structure of the project.
 - Use relative imports if you are unsure what the project import paths are.
 - It's okay not to edit a file if it's not needed (e.g. if you have already edited another one or this one is not needed).
 - Return the full, final updated code in file_changes
+- If there are next steps (i.e. importing a module), give specific instructions to the user (i.e. the actual command)
 
 ## Output Format
 
@@ -25,7 +26,8 @@ You must respond with ONLY a JSON object containing:
     "file_changes": {{
         "{file_path}": "the complete new file content"
     }},
-    "instrumentation_type": "datadog_lambda_instrumentation"
+    "instrumentation_type": "datadog_lambda_instrumentation",
+    "next_steps":["step1", "step2", "..."],
 }}
 ```
 

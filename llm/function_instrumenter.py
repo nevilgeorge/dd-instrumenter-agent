@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Literal
+from typing import Dict, Literal, List
 
 import openai
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ class InstrumentationResult(BaseModel):
         description="Type of instrumentation added",
         default="datadog_lambda_instrumentation"
     )
+    next_steps: List[str] = Field(description="List of steps required after instrumentation", default_factory=list)
 
 class FunctionInstrumenter(BaseLLMClient):
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
@@ -43,7 +44,8 @@ class FunctionInstrumenter(BaseLLMClient):
             InstrumentationResult containing the modified code and change information
         """
         prompt = load_prompt_template(
-            "instrument_cdk",
+            "instrument",
+            file_type="CDK stack",
             documentation=dd_documentation,
             file_path=cdk_script_file.metadata['source'],
             file_content=cdk_script_file.page_content,
