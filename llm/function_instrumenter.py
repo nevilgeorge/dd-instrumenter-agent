@@ -30,27 +30,21 @@ class FunctionInstrumenter(BaseLLMClient):
         """
         super().__init__(client)
 
-    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection], runtime: str, additional_context: str = "") -> InstrumentationResult:
+    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: DocSection, runtime: str, additional_context: str = "") -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
 
         Args:
             cdk_script_file: Document containing CDK file content
-            dd_documentation: Datadog documentation sections
+            dd_documentation: Datadog documentation
             runtime: Programming language runtime (e.g., "python", "nodejs", "java")
 
         Returns:
             InstrumentationResult containing the modified code and change information
         """
-        # Format documentation sections into a readable string
-        formatted_docs = "\n\n".join([
-            f"Section: {section_name}\n{section.content}"
-            for section_name, section in dd_documentation.items()
-        ])
-
         prompt = load_prompt_template(
             "instrument_cdk",
-            formatted_docs=formatted_docs,
+            formatted_docs=dd_documentation.content,
             file_path=cdk_script_file.metadata['source'],
             file_content=cdk_script_file.page_content,
             runtime=runtime

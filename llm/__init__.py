@@ -7,7 +7,7 @@ import openai
 class BaseLLMClient:
     """Base class for standardized LLM client calls across the application."""
 
-    DEFAULT_MODEL = "openai/gpt-4o-mini"
+    DEFAULT_MODEL = "gpt-4o"
     DEFAULT_TEMPERATURE = 0
     DEFAULT_STREAM = False
 
