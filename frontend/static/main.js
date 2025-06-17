@@ -124,7 +124,7 @@ async function proceedToStep2() {
 // Check if repository is accessible
 async function checkRepositoryAccess() {
     try {
-        const response = await fetch(`/instrument?repository=${encodeURIComponent(appState.repository)}`, {
+        const response = await fetch(`/check-access?repository=${encodeURIComponent(appState.repository)}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -227,7 +227,8 @@ async function instrumentRepository() {
     `;
     
     try {
-        const response = await fetch(`/instrument?repository=${encodeURIComponent(appState.repository)}`, {
+        const additionalContext = document.getElementById('additionalContext').value.trim();
+        const response = await fetch(`/instrument?repository=${encodeURIComponent(appState.repository)}&additional_context=${encodeURIComponent(additionalContext)}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -295,6 +296,15 @@ function showSuccess(data) {
             </div>
         `;
         
+        if (data.pull_request.files_changed && data.pull_request.files_changed.length > 0) {
+            successHtml += `
+                <div style="margin: 8px; font-size: 12px;">
+                    <strong>📁 Files Modified:</strong><br>
+                    ${data.pull_request.files_changed.map(file => `• ${file.split('/').pop()}`).join('<br>')}
+                </div>
+            `;
+        }
+
         if (data.pull_request.pr_url) {
             successHtml += `
                 <a href="${data.pull_request.pr_url}" target="_blank" class="pr-link">
@@ -302,12 +312,14 @@ function showSuccess(data) {
                 </a>
             `;
         }
-        
-        if (data.pull_request.files_changed && data.pull_request.files_changed.length > 0) {
+
+        if (data.next_steps && data.next_steps.length > 0) {
             successHtml += `
-                <div style="margin-top: 12px; font-size: 12px;">
-                    <strong>📁 Files Modified:</strong><br>
-                    ${data.pull_request.files_changed.map(file => `• ${file.split('/').pop()}`).join('<br>')}
+                <div style="margin-top: 16px;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Next Steps:</div>
+                    <ol style="margin-left: 20px; color: #495057;">
+                        ${data.next_steps.map(step => `<li>${simpleFormat(step)}</li>`).join('')}
+                    </ol>
                 </div>
             `;
         }
@@ -320,9 +332,8 @@ function showSuccess(data) {
             </div>
         `;
     }
-    
+
     successHtml += `</div>`;
-    
     resultDiv.innerHTML = successHtml;
 }
 
@@ -354,6 +365,10 @@ function updateStepStatus(stepNumber, status) {
     } else {
         stepNumberElement.textContent = stepNumber;
     }
+}
+
+function simpleFormat(str) {
+    return str.replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
 // Enable a step

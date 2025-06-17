@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Literal
+from typing import Dict, Literal, List
 
 import openai
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ class InstrumentationResult(BaseModel):
         description="Type of instrumentation added",
         default="datadog_lambda_instrumentation"
     )
+    next_steps: List[str] = Field(description="List of steps required after instrumentation", default_factory=list)
 
 class FunctionInstrumenter(BaseLLMClient):
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
@@ -81,7 +82,7 @@ class FunctionInstrumenter(BaseLLMClient):
 
     def instrument_cdk_file(self, file_path: str, dd_documentation: DocSection, runtime: str, additional_context: str = "") -> InstrumentationResult:
         """Instrument a CDK file with Datadog Lambda instrumentation."""
-        return self.instrument_file(file_path, "CDK", dd_documentation, runtime, additional_context)
+        return self.instrument_file(file_path, "CDK stack", dd_documentation, runtime, additional_context)
 
     def instrument_terraform_file(self, file_path: str, dd_documentation: DocSection, runtime: str, additional_context: str = "") -> InstrumentationResult:
         """Instrument a Terraform file with Datadog Lambda instrumentation."""

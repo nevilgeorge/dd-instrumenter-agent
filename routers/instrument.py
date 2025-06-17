@@ -134,6 +134,7 @@ async def instrument(
                 "runtime": analysis.runtime
             },
             "pull_request": pr_result,
+            "next_steps": instrumented_code.next_steps
         }
     except GithubException as e:
         # Cleanup: Remove cloned directory on GitHub error
@@ -202,3 +203,76 @@ async def instrument(
 
         logger.error(f"General error instrumenting repository {repository}: {e}")
         raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+
+@router.get("/check-access")
+async def check_access(
+    repository: str,
+    request: Request,
+    github_client: GithubClient = Depends(get_github_client),
+):
+    """
+    Endpoint that checks if a repository is accessible.
+    """
+    logger = request.app.state.logger
+
+    try:
+        # Try to get repository info to check access
+        repo = github_client.github.get_repo(repository)
+        
+        # If we get here, repository exists and is accessible
+        return {
+            "accessible": True,
+            "repository": {
+                "name": repo.name,
+                "full_name": repo.full_name,
+                "private": repo.private
+            }
+        }
+    except GithubException as e:
+        # Handle GitHub-specific errors (404, 403, etc.)
+        if e.status == 404:
+            # Repository not found - could be private, need authentication
+            logger.warning(f"Repository {repository} not found (404) - likely private or doesn't exist")
+
+            # Check if OAuth is configured
+            if not os.getenv("GITHUB_CLIENT_ID"):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "repository_not_found",
+                        "detail": f"Repository '{repository}' not found. It may be private or doesn't exist. GitHub OAuth is not configured for authentication.",
+                        "message": "Repository not found or private. Configure GitHub OAuth to access private repositories."
+                    }
+                )
+
+            # Generate OAuth URL for authentication
+            auth_url = f"/auth/github?repository={repository}"
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "repository_access_denied",
+                    "detail": f"Repository '{repository}' not found or access denied. Please authenticate with GitHub.",
+                    "auth_url": auth_url,
+                    "message": "Repository access denied. Authentication required."
+                }
+            )
+        elif e.status == 403:
+            # Forbidden - could be rate limit or permission issue
+            logger.warning(f"Access forbidden for repository {repository} (403)")
+
+            # Generate OAuth URL for authentication
+            auth_url = f"/auth/github?repository={repository}"
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "repository_access_denied",
+                    "detail": f"Access denied to repository '{repository}'. You may need to authenticate or lack permissions.",
+                    "auth_url": auth_url,
+                    "message": "Repository access denied. Authentication required."
+                }
+            )
+        else:
+            # Other GitHub errors
+            logger.error(f"GitHub API error for repository {repository}: {e}")
+            raise HTTPException(status_code=500, detail=f"GitHub API error: {e}")
