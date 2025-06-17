@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Optional
 from urllib.parse import urljoin
 
 import requests
@@ -120,7 +120,7 @@ class DocumentRetriever:
         return "\n\n".join(content_parts)
 
 
-    def get_lambda_documentation(self, runtime: str, iac_tool: str) -> Dict[str, DocSection]:
+    def get_lambda_documentation(self, runtime: str, iac_tool: str) -> DocSection:
         """Retrieve and parse the AWS Lambda documentation.
 
         Args:
@@ -128,7 +128,7 @@ class DocumentRetriever:
             iac_tool: The IaC tool ('cdk' or 'terraform')
 
         Returns:
-            Dictionary with a single DocSection containing all documentation content
+            Single DocSection containing all documentation content
         """
         if iac_tool not in ['cdk', 'terraform']:
             raise ValueError(f"Invalid IaC tool: {iac_tool}")
@@ -162,4 +162,4 @@ class DocumentRetriever:
             self.logger.error("Failed to parse documentation content")
             return {}
 
-        return {"documentation": doc_section}
+        return doc_section

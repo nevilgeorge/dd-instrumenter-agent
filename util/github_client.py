@@ -150,7 +150,6 @@ class GithubClient:
         repo_name: str,
         branch_name: str,
         pr_description: PRDescription,
-        base_branch: str = "main",
     ) -> Dict[str, Any]:
         """
         Create a pull request using GitHub API.
@@ -160,7 +159,6 @@ class GithubClient:
             repo_name: GitHub repository name
             branch_name: Name of the source branch
             pr_description: Generated PR description
-            base_branch: Base branch for the PR (default: main)
 
         Returns:
             Dictionary containing PR information
@@ -169,8 +167,9 @@ class GithubClient:
             if not self.token:
                 raise Exception("GitHub token required for creating pull requests")
 
-            # Get the repository
+            # Get the repository and use its default branch
             repo = self.github.get_repo(f"{repo_owner}/{repo_name}")
+            base_branch = repo.default_branch
 
             # Format the PR body
             pr_body = f"""{pr_description.description}
@@ -207,13 +206,13 @@ class GithubClient:
             self.logger.error(f"Failed to create pull request: {str(e)}")
             raise
 
-    def _get_git_diff(self, repo_path: str, base_branch: str = "main") -> str:
+    def _get_git_diff(self, repo_path: str, base_branch: str) -> str:
         """
         Get git diff between current branch and base branch.
 
         Args:
             repo_path: Path to the git repository
-            base_branch: Base branch to compare against (default: main)
+            base_branch: Base branch to compare against
 
         Returns:
             String containing the git diff output
@@ -254,6 +253,10 @@ class GithubClient:
             Dictionary containing PR information and status
         """
         try:
+            # Get repository and its default branch
+            repo_github = self.github.get_repo(f"{repo_owner}/{repo_name}")
+            base_branch = repo_github.default_branch
+            
             # Generate branch name if not provided
             if not branch_name:
                 timestamp = int(time.time())
@@ -287,7 +290,7 @@ class GithubClient:
             # Create pull request
             self.logger.debug("Creating pull request...")
             pr_info = self._create_pull_request(
-                repo_owner, repo_name, branch_name, pr_description, base_branch
+                repo_owner, repo_name, branch_name, pr_description
             )
 
             return {
