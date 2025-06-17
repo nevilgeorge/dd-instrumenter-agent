@@ -40,6 +40,9 @@ def create_app():
     # In-memory session store (in production, use Redis or database)
     oauth_sessions = {}
     user_tokens = {}
+    
+    # Store user tokens in app state so dependencies can access them
+    app.state.user_tokens = user_tokens
 
     def get_user_token(request: Request) -> Optional[str]:
         """Extract user token from session/cookies."""

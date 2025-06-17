@@ -3,182 +3,594 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DD Instrumenter Agent</title>
+    <title>Install the Datadog Agent on AWS Lambda</title>
     <link rel="icon" type="image/png" href="/static/favicon.png">
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        * {
             margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            max-width: 600px;
-            width: 100%;
-        }
-        h1 {
-            color: #333;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-        }
-        .input-group {
-            margin-bottom: 25px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 600;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s ease;
+            padding: 0;
             box-sizing: border-box;
         }
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background-color: #f8f9fa;
+            line-height: 1.6;
+            color: #333;
         }
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        /* Datadog Navigation Header */
+        .datadog-nav {
+            background: #632ca6;
+            padding: 0 16px;
             color: white;
-            padding: 15px 30px;
-            border: none;
+            font-size: 14px;
+            border-bottom: 1px solid #5a2495;
+        }
+        
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            height: 48px;
+        }
+        
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 32px;
+        }
+        
+        .nav-logo-icon {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+        }
+        
+        .nav-logo-text {
+            font-weight: 600;
+            color: white;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            gap: 24px;
+            flex: 1;
+        }
+        
+        .nav-tab {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            padding: 12px 0;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+            font-size: 13px;
+        }
+        
+        .nav-tab:hover {
+            color: white;
+        }
+        
+        .nav-tab.active {
+            color: white;
+            border-bottom-color: #4dabf7;
+        }
+        
+        .nav-tab.preview {
+            position: relative;
+        }
+        
+        .nav-tab.preview::after {
+            content: "PREVIEW";
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin-left: 6px;
+            vertical-align: super;
+        }
+        
+        .nav-tab.new {
+            position: relative;
+        }
+        
+        .nav-tab.new::after {
+            content: "NEW";
+            background: #28a745;
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin-left: 6px;
+            vertical-align: super;
+        }
+        
+        .nav-breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+        }
+        
+        .nav-breadcrumb a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+        }
+        
+        .nav-breadcrumb a:hover {
+            color: white;
+        }
+        
+        .breadcrumb-arrow {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .header {
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .header-icon {
+            width: 24px;
+            height: 24px;
+            background: #ff6b35;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .header-time {
+            color: #6c757d;
+            font-size: 14px;
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 24px;
+            padding: 24px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                padding: 16px;
+            }
+            
+            .nav-tabs {
+                display: none;
+            }
+            
+            .nav-breadcrumb {
+                flex: 1;
+            }
+        }
+        
+        .content {
+            background: white;
             border-radius: 8px;
+            border: 1px solid #e9ecef;
+            overflow: hidden;
+        }
+        
+        .step {
+            border-bottom: 1px solid #e9ecef;
+            padding: 24px;
+        }
+        
+        .step:last-child {
+            border-bottom: none;
+        }
+        
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .step-number {
+            width: 24px;
+            height: 24px;
+            background: #6f42c1;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .step-number.completed {
+            background: #28a745;
+        }
+        
+        .step-number.current {
+            background: #007bff;
+        }
+        
+        .step-title {
             font-size: 16px;
             font-weight: 600;
-            cursor: pointer;
+            color: #333;
+        }
+        
+        .step-content {
+            margin-left: 36px;
+        }
+        
+        .input-group {
+            margin-bottom: 16px;
+        }
+        
+        .input-label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .input-field {
             width: 100%;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            padding: 10px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
         }
-        button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        
+        .input-field:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
         }
-        button:disabled {
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #1e7e34;
+        }
+        
+        .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
         }
-        .result {
-            margin-top: 25px;
-            padding: 20px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            white-space: pre-wrap;
+        
+        .auth-status {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
         }
-        .success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
+        
+        .auth-status.authenticated {
+            background: #d4edda;
             color: #155724;
+            border: 1px solid #c3e6cb;
         }
-        .error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
+        
+        .auth-status.not-authenticated {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .auth-status.needs-auth {
+            background: #f8d7da;
             color: #721c24;
+            border: 1px solid #f5c6cb;
         }
-        .loading {
+        
+        .result {
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .result.loading {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
             text-align: center;
-            color: #666;
         }
+        
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
             border-radius: 50%;
-            width: 30px;
-            height: 30px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 8px;
         }
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .auth-status {
-            padding: 15px;
+        
+        .sidebar {
+            background: white;
             border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            border: 1px solid #e9ecef;
+            padding: 24px;
+            height: fit-content;
         }
-        .auth-status.authenticated {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
+        
+        .sidebar-section {
+            margin-bottom: 24px;
         }
-        .auth-status.not-authenticated {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
+        
+        .sidebar-section:last-child {
+            margin-bottom: 0;
         }
-        .auth-icon {
-            margin-right: 10px;
-        }
-        .logout-btn {
-            background: #dc3545;
-            padding: 8px 16px;
+        
+        .sidebar-title {
             font-size: 14px;
-            width: auto;
-            margin: 0;
-        }
-        .logout-btn:hover {
-            background: #c82333;
-        }
-        .auth-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
             font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .sidebar-text {
+            font-size: 14px;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+        
+        .sidebar-link {
+            color: #007bff;
             text-decoration: none;
+        }
+        
+        .sidebar-link:hover {
+            text-decoration: underline;
+        }
+        
+        .step.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .step.disabled .step-number {
+            background: #6c757d;
+        }
+        
+        .code-command {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 13px;
+            margin: 12px 0;
+            position: relative;
+        }
+        
+        .auth-note {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 8px;
+        }
+        
+        .pr-link {
             display: inline-block;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
         }
-        .auth-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-        .auth-required {
-            text-align: center;
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
+        
+        .pr-link:hover {
+            background: #1e7e34;
+            color: white;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎯 DD Instrumenter Agent</h1>
-        <div id="authSection"></div>
-        <form id="instrumentForm">
-            <div class="input-group">
-                <label for="repository">GitHub Repository:</label>
-                <input 
-                    type="text" 
-                    id="repository" 
-                    name="repository" 
-                    placeholder="e.g., owner/repository-name or github.com/owner/repository-name"
-                    required
-                >
+    <div class="datadog-nav">
+        <div class="nav-content">
+            <div class="nav-logo">
+                <img src="/static/datadog-logo.jpg" alt="Datadog" class="nav-logo-icon">
+                <div class="nav-logo-text">Fleet Automation</div>
             </div>
-            <button type="submit" id="submitBtn">Instrument Repository</button>
-        </form>
-        <div id="result"></div>
+            <div class="nav-tabs">
+                <a href="#" class="nav-tab">View Agents</a>
+                <a href="#" class="nav-tab active">Install Agents</a>
+                <a href="#" class="nav-tab preview">Configure Agents</a>
+                <a href="#" class="nav-tab new">Upgrade Agents</a>
+                <a href="#" class="nav-tab preview">Services</a>
+            </div>
+            <div class="nav-breadcrumb">
+                <a href="#">← Select Another Platform</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="header">
+        <div class="header-icon">
+            <img src="/static/lambda-icon.png" alt="AWS Lambda" style="width: 24px; height: 24px; object-fit: contain;">
+        </div>
+        <div class="header-title">Install the Datadog Agent on AWS Lambda</div>
+        <div class="header-time">
+            <span>⏱️</span>
+            <span>3 min</span>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="content">
+            <!-- Step 1: Repository URL -->
+            <div class="step" id="step1">
+                <div class="step-header">
+                    <div class="step-number current" id="step1-number">1</div>
+                    <div class="step-title">Add your repository URL</div>
+                </div>
+                <div class="step-content">
+                    <div class="input-group">
+                        <label class="input-label" for="repository">Repository URL or name</label>
+                        <input 
+                            type="text" 
+                            id="repository" 
+                            class="input-field"
+                            placeholder="e.g., owner/repository-name or https://github.com/owner/repository-name"
+                            required
+                        >
+                        <div class="auth-note">
+                            You can enter the repository name (owner/repo) or the full GitHub URL
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Step 2: GitHub Authentication -->
+            <div class="step disabled" id="step2">
+                <div class="step-header">
+                    <div class="step-number" id="step2-number">2</div>
+                    <div class="step-title">GitHub Authentication</div>
+                </div>
+                <div class="step-content">
+                    <div id="authSection">
+                        <div class="auth-status not-authenticated">
+                            <span>ℹ️</span>
+                            <span>Not authenticated - only public repositories will work</span>
+                        </div>
+                    </div>
+                    <div id="authButton" style="display: none;">
+                        <p style="margin-bottom: 12px; color: #6c757d; font-size: 14px;">
+                            GitHub authentication is required to access this repository.
+                        </p>
+                        <a href="#" id="githubAuthLink" class="btn btn-primary">
+                            🔗 Authenticate with GitHub
+                        </a>
+                        <div class="auth-note">
+                            This will redirect you to GitHub for secure authentication.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Step 3: Confirmation -->
+            <div class="step disabled" id="step3">
+                <div class="step-header">
+                    <div class="step-number" id="step3-number">3</div>
+                    <div class="step-title">Instrument your Lambda Functions</div>
+                </div>
+                <div class="step-content">
+                    <p style="margin-bottom: 16px; color: #6c757d; font-size: 14px;">
+                        Ready to instrument your Lambda functions with Datadog monitoring.
+                    </p>
+                    <button type="button" id="confirmBtn" class="btn btn-success">
+                        Instrument Lambda Function
+                    </button>
+                    <div id="result"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-title">Environment Type</div>
+                <div class="sidebar-text">
+                    We recommend you get started with Lambda functions in a dev or staging environment first.
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="sidebar-title">Lambda Container Images</div>
+                <div class="sidebar-text">
+                    To instrument Lambda functions deployed as container images, you must follow the 
+                    <a href="#" class="sidebar-link">instructions to modify your dockerfile instead</a>.
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="sidebar-title">Supported Runtimes</div>
+                <div class="sidebar-text">
+                    View a list of the latest 
+                    <a href="#" class="sidebar-link">supported runtimes</a>.
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="sidebar-title">📖 Resources</div>
+                <div class="sidebar-text">
+                    <a href="#" class="sidebar-link">Extension Installation and Usage</a><br>
+                    <a href="#" class="sidebar-link">Extension Configuration</a><br>
+                    <a href="#" class="sidebar-link">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/main.js"></script>

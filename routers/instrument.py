@@ -1,6 +1,9 @@
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from github.GithubException import GithubException
 
 from dependencies import (get_document_retriever, get_function_instrumenter,
                           get_github_client, get_pr_description_generator,
@@ -67,15 +70,35 @@ async def instrument(
         repo_owner, repo_name = repo_parts
 
         # Step 5: Generate pull request
-        pr_result = github_client.generate_pull_request(
-            repo_path=cloned_path,
-            repo_owner=repo_owner,
-            repo_name=repo_name,
-            instrumentation_result=instrumented_code,
-            pr_generator=pr_generator
-        )
-
-        logger.info(f"Pull request result {pr_result}")
+        try:
+            pr_result = github_client.generate_pull_request(
+                repo_path=cloned_path,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                instrumentation_result=instrumented_code,
+                pr_generator=pr_generator
+            )
+            logger.info(f"Pull request result {pr_result}")
+        except GithubException as pr_error:
+            # Handle push/PR creation errors separately
+            if pr_error.status == 403:
+                logger.warning(f"Push access denied for repository {repository}")
+                
+                # Generate OAuth URL for authentication with push permissions
+                auth_url = f"/auth/github?repository={repository}"
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "repository_push_denied",
+                        "detail": f"You don't have push access to repository '{repository}'. Please authenticate with GitHub to grant write permissions.",
+                        "auth_url": auth_url,
+                        "message": "Push access denied. Authentication with write permissions required."
+                    }
+                )
+            else:
+                # Other GitHub errors during PR creation
+                logger.error(f"GitHub API error during PR creation for repository {repository}: {pr_error}")
+                raise HTTPException(status_code=500, detail=f"GitHub API error during PR creation: {pr_error}")
 
         return {
             "received_at": start_time,
@@ -91,5 +114,54 @@ async def instrument(
             },
             "pull_request": pr_result,
         }
+    except GithubException as e:
+        # Handle GitHub-specific errors (404, 403, etc.)
+        if e.status == 404:
+            # Repository not found - could be private, need authentication
+            logger.warning(f"Repository {repository} not found (404) - likely private or doesn't exist")
+            
+            # Check if OAuth is configured
+            if not os.getenv("GITHUB_CLIENT_ID"):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "repository_not_found",
+                        "detail": f"Repository '{repository}' not found. It may be private or doesn't exist. GitHub OAuth is not configured for authentication.",
+                        "message": "Repository not found or private. Configure GitHub OAuth to access private repositories."
+                    }
+                )
+            
+            # Generate OAuth URL for authentication
+            auth_url = f"/auth/github?repository={repository}"
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "repository_access_denied",
+                    "detail": f"Repository '{repository}' not found or access denied. Please authenticate with GitHub.",
+                    "auth_url": auth_url,
+                    "message": "Repository access denied. Authentication required."
+                }
+            )
+        elif e.status == 403:
+            # Forbidden - could be rate limit or permission issue
+            logger.warning(f"Access forbidden for repository {repository} (403)")
+            
+            # Generate OAuth URL for authentication
+            auth_url = f"/auth/github?repository={repository}"
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "repository_access_denied", 
+                    "detail": f"Access denied to repository '{repository}'. You may need to authenticate or lack permissions.",
+                    "auth_url": auth_url,
+                    "message": "Repository access denied. Authentication required."
+                }
+            )
+        else:
+            # Other GitHub errors
+            logger.error(f"GitHub API error for repository {repository}: {e}")
+            raise HTTPException(status_code=500, detail=f"GitHub API error: {e}")
+            
     except Exception as e:
+        logger.error(f"General error instrumenting repository {repository}: {e}")
         raise HTTPException(status_code=500, detail=f"Error: {e}")

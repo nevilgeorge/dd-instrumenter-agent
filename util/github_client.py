@@ -194,6 +194,10 @@ class GithubClient:
                 "status": "created",
             }
 
+        except GithubException as e:
+            self.logger.error(f"GitHub API error creating pull request: {str(e)}")
+            # Re-raise with specific GitHub error info
+            raise
         except Exception as e:
             self.logger.error(f"Failed to create pull request: {str(e)}")
             raise
