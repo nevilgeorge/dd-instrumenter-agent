@@ -256,13 +256,12 @@ class GithubClient:
             # Get repository and its default branch
             repo_github = self.github.get_repo(f"{repo_owner}/{repo_name}")
             base_branch = repo_github.default_branch
-            
+
             # Generate branch name if not provided
             if not branch_name:
                 timestamp = int(time.time())
                 branch_name = f"feature/dd-instrument-{timestamp}"
-            
-            base_branch = self._get_default_branch(repo_owner, repo_name)
+
 
             # Extract file changes from instrumentation result
             file_changes = instrumentation_result.file_changes
@@ -303,21 +302,3 @@ class GithubClient:
         except Exception as e:
             self.logger.error(f"Failed to generate pull request: {str(e)}")
             raise
-    
-    def _get_default_branch(self, repo_owner: str, repo_name: str) -> str:
-        """
-        Fetch the default branch of a GitHub repository using the GitHub API.
-
-        Args:
-            repo_owner: GitHub repository owner
-            repo_name: GitHub repository name
-
-        Returns:
-            Default branch name (e.g. 'main', 'master')
-        """
-        try:
-            repo = self.github.get_repo(f"{repo_owner}/{repo_name}")
-            return repo.default_branch
-        except GithubException as e:
-            self.logger.warning(f"Failed to fetch default branch from GitHub: {str(e)}")
-            return "main"  # Safe fallback

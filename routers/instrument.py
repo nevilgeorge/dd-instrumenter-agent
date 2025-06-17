@@ -49,11 +49,11 @@ async def instrument(
             cloned_path = github_client.clone_repository(repository)
             logger.info(f"Cloned repository {repository} to {cloned_path}")
 
-            # Read repository contents
-            documents = repo_parser.read_repository_files(cloned_path)
+            # Read repository contents as tree structure
+            tree = repo_parser.read_repository_files(cloned_path)
 
             # Analyze repository type
-            analysis = repo_analyzer.analyze_repo(documents)
+            analysis = repo_analyzer.analyze_repo(tree)
             logger.info(f"Analyzed repository: {analysis}")
 
             llmobs.LLMObs.annotate(span=span, tags={
@@ -64,16 +64,9 @@ async def instrument(
 
         # Instrument the code with Datadog.
         with llmobs.LLMObs.task(name="instrument-code") as span:
-            if analysis.repo_type == "cdk":
-                cdk_script_file = repo_parser.find_cdk_stack_file(documents, analysis.runtime)
-                dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'cdk')
-                instrumented_code = function_instrumenter.instrument_cdk_file(cdk_script_file, dd_documentation, analysis.runtime, additional_context)
-            elif analysis.repo_type == "terraform":
-                terraform_script_file = repo_parser.find_terraform_file(documents, analysis.runtime)
-                dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, 'terraform')
-                instrumented_code = function_instrumenter.instrument_terraform_file(terraform_script_file.metadata['source'], terraform_script_file.page_content, dd_documentation, analysis.runtime, additional_context)
-            else:
-                raise HTTPException(status_code=500, detail="Repository type not supported.")
+            script_file_path = os.path.join(cloned_path, analysis.script_file)
+            dd_documentation = document_retriever.get_lambda_documentation(analysis.runtime, analysis.repo_type)
+            instrumented_code = function_instrumenter.instrument_file(script_file_path, analysis.repo_type.upper(), dd_documentation, analysis.runtime, additional_context)
 
             logger.info(f"Successfully generated instrumentation!")
 
@@ -137,8 +130,7 @@ async def instrument(
                 "type": analysis.repo_type,
                 "confidence": analysis.confidence,
                 "evidence": analysis.evidence,
-                "cdk_script_file": analysis.cdk_script_file,
-                "terraform_script_file": analysis.terraform_script_file,
+                "script_file": analysis.script_file,
                 "runtime": analysis.runtime
             },
             "pull_request": pr_result,
