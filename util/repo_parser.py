@@ -75,40 +75,40 @@ class RepoParser:
                 raise Exception(f"Unsupported runtime: {runtime}")
         raise Exception("Could not find any CDK stack file (no file contains 'extends cdk.Stack')")
 
-    def find_terraform_file(self, documents: List[Document]) -> Document:
+    def find_terraform_file(self, documents: List[Document], runtime: str) -> Document:
         """
-        Find the main Terraform file by looking for files that contain Lambda function definitions.
+        Find the Terraform file by filtering for documents with .tf file extensions.
         :param documents: List[Document] List of Document objects to search through
+        :param runtime: str The runtime (not used for Terraform but kept for consistency)
         :return: Document The matching Document object containing the Terraform configuration
         :raises: Exception if no matching document is found
         """
-        # First try to find main.tf as it's the conventional entry point
+        terraform_files = []
+        
         for doc in documents:
-            if doc.metadata['filename'] == 'main.tf':
-                return doc
+            # Check if the file has a .tf extension
+            if doc.metadata.get('source', '').endswith('.tf'):
+                terraform_files.append(doc)
+        
+        if not terraform_files:
+            raise Exception("Could not find any Terraform files (no files with .tf extension)")
+        
+        # Create a map of file name to document
+        terraform_file_map = {}
+        for doc in terraform_files:
+            file_name = doc.metadata.get('source', '').split('/')[-1]
+            terraform_file_map[file_name] = doc
 
-        # If main.tf not found, look for any .tf file containing Lambda function definitions
-        for doc in documents:
-            if doc.metadata['filename'].endswith('.tf'):
-                content = doc.page_content.lower()
-                # Look for common Lambda function indicators in Terraform
-                if any(indicator in content for indicator in [
-                    'resource "aws_lambda_function"',  # Most specific pattern
-                    'aws_lambda_function',  # Resource type
-                    'lambda_function',  # Variable/parameter name
-                    'lambda_layer',  # Lambda layer
-                    'aws_lambda_permission',  # Lambda permissions
-                    'aws_lambda_event_source_mapping',  # Event source mappings
-                    'aws_lambda_alias',  # Lambda aliases
-                    'aws_lambda_version'  # Lambda versions
-                ]):
-                    return doc
+        if 'main.tf' in terraform_file_map:
+            return terraform_file_map['main.tf']
 
-        # If no Lambda-specific file found, look for any .tf file that might contain provider configuration
-        for doc in documents:
-            if doc.metadata['filename'].endswith('.tf'):
-                content = doc.page_content.lower()
-                if 'provider "aws"' in content or 'terraform {' in content:
-                    return doc
+        resource_files = [doc for doc in terraform_files if 'resource' in doc.page_content]
+        if not resource_files:
+            raise Exception("Could not find any Terraform resource files")
 
-        raise Exception("Could not find any Terraform file containing Lambda function definitions or AWS provider configuration")
+        #TODO: Add support for other resource types. 
+        lambda_resource_files = [doc for doc in resource_files if "aws_lambda_function" in doc.page_content]
+        if lambda_resource_files:
+            return lambda_resource_files[0]
+        
+        return resource_files[0]
