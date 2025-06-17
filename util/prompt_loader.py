@@ -41,13 +41,13 @@ def load_prompt_template(template_name: str, **kwargs: Any) -> str:
 def parse_json_response(response_text: str) -> dict:
     """
     Parse JSON from LLM response, handling markdown code blocks.
-    
+
     Args:
         response_text: Raw response from LLM
-        
+
     Returns:
         Parsed JSON dictionary
-        
+
     Raises:
         json.JSONDecodeError: If JSON cannot be parsed
     """
@@ -57,12 +57,12 @@ def parse_json_response(response_text: str) -> dict:
         text = text[7:]  # Remove ```json
     elif text.startswith("```"):
         text = text[3:]   # Remove ```
-    
+
     if text.endswith("```"):
         text = text[:-3]  # Remove closing ```
-        
+
     text = text.strip()
-    
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:

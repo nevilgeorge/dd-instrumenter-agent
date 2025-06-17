@@ -1,6 +1,5 @@
 import json
-import logging
-from typing import Dict, List, Literal
+from typing import Dict, Literal
 
 import openai
 from pydantic import BaseModel, Field
@@ -31,13 +30,14 @@ class FunctionInstrumenter(BaseLLMClient):
         """
         super().__init__(client)
 
-    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection], additional_context: str) -> InstrumentationResult:
+    def instrument_cdk_file(self, cdk_script_file: Document, dd_documentation: Dict[str, DocSection], runtime: str, additional_context: str) -> InstrumentationResult:
         """
         Instrument a CDK file with Datadog Lambda instrumentation.
 
         Args:
             cdk_script_file: Document containing CDK file content
             dd_documentation: Datadog documentation sections
+            runtime: Programming language runtime (e.g., "python", "nodejs", "java")
 
         Returns:
             InstrumentationResult containing the modified code and change information
@@ -49,10 +49,13 @@ class FunctionInstrumenter(BaseLLMClient):
         ])
 
         prompt = load_prompt_template(
-            "instrument_cdk",
+            "instrument",
+            file_type="CDK stack",
             formatted_docs=formatted_docs,
             file_path=cdk_script_file.metadata['source'],
-            file_content=cdk_script_file.page_content
+            file_content=cdk_script_file.page_content,
+            runtime=runtime,
+            additional_context=additional_context,
         )
 
         try:
@@ -77,7 +80,7 @@ class FunctionInstrumenter(BaseLLMClient):
             self.logger.error(f"Error instrumenting CDK file {cdk_script_file.metadata['source']}: {str(e)}")
             raise
 
-    def instrument_terraform_file(self, file_path: str, code: str, dd_documentation: Dict[str, DocSection], additional_context: str) -> InstrumentationResult:
+    def instrument_terraform_file(self, file_path: str, code: str, dd_documentation: Dict[str, DocSection], runtime: str, additional_context: str) -> InstrumentationResult:
         """
         Instrument a Terraform file with Datadog Lambda instrumentation.
 
@@ -90,10 +93,20 @@ class FunctionInstrumenter(BaseLLMClient):
         Returns:
             InstrumentationResult containing the modified code and change information
         """
+        # Format documentation sections into a readable string
+        formatted_docs = "\n\n".join([
+            f"Section: {section_name}\n{section.content}"
+            for section_name, section in dd_documentation.items()
+        ])
+
         prompt = load_prompt_template(
-            "instrument_terraform",
+           "instrument",
+            file_type="Terraform",
+            formatted_docs=formatted_docs,
             file_path=file_path,
-            code=code
+            file_content=code,
+            runtime="",
+            additional_context=additional_context,
         )
 
         try:

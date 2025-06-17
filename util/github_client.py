@@ -40,13 +40,13 @@ class GithubClient:
                 self.logger.info("Using personal access token for GitHub authentication")
             self.github = Github(self.token)
 
-    def clone_repository(self, repository: str, target_dir: str = "temp_clone") -> str:
+    def clone_repository(self, repository: str, target_dir: str = None) -> str:
         """
         Clone a repository by name/URL, automatically fetching the clone URL.
 
         Args:
             repository: Repository name in 'owner/repo' format or full GitHub URL
-            target_dir: The target folder (defaults to "temp_clone")
+            target_dir: The target folder (defaults to auto-generated hidden folder with timestamp)
 
         Returns:
             The absolute path of the cloned folder
@@ -61,6 +61,11 @@ class GithubClient:
             # Add authentication to clone URL if token is available
             if self.token:
                 clone_url = clone_url.replace('https://', f'https://{self.token}@')
+
+            # Generate random hidden folder name with timestamp if not provided
+            if not target_dir:
+                timestamp = int(time.time())
+                target_dir = f".dir_{timestamp}"
 
             if os.path.exists(target_dir):
                 shutil.rmtree(target_dir)
@@ -194,6 +199,10 @@ class GithubClient:
                 "status": "created",
             }
 
+        except GithubException as e:
+            self.logger.error(f"GitHub API error creating pull request: {str(e)}")
+            # Re-raise with specific GitHub error info
+            raise
         except Exception as e:
             self.logger.error(f"Failed to create pull request: {str(e)}")
             raise
@@ -229,7 +238,6 @@ class GithubClient:
         instrumentation_result: InstrumentationResult,
         pr_generator: PRDescriptionGenerator,
         branch_name: Optional[str] = None,
-        base_branch: str = "main",
     ) -> Dict[str, Any]:
         """
         Complete workflow to generate a pull request with the given instrumentation changes.
@@ -241,7 +249,6 @@ class GithubClient:
             instrumentation_result: InstrumentationResult containing file changes and metadata
             pr_generator: PRDescriptionGenerator instance for creating descriptions
             branch_name: Optional custom branch name (auto-generated if not provided)
-            base_branch: Base branch to compare against (default: main)
 
         Returns:
             Dictionary containing PR information and status
@@ -251,6 +258,8 @@ class GithubClient:
             if not branch_name:
                 timestamp = int(time.time())
                 branch_name = f"feature/dd-instrument-{timestamp}"
+            
+            base_branch = self._get_default_branch(repo_owner, repo_name)
 
             # Extract file changes from instrumentation result
             file_changes = instrumentation_result.file_changes
@@ -291,3 +300,21 @@ class GithubClient:
         except Exception as e:
             self.logger.error(f"Failed to generate pull request: {str(e)}")
             raise
+    
+    def _get_default_branch(self, repo_owner: str, repo_name: str) -> str:
+        """
+        Fetch the default branch of a GitHub repository using the GitHub API.
+
+        Args:
+            repo_owner: GitHub repository owner
+            repo_name: GitHub repository name
+
+        Returns:
+            Default branch name (e.g. 'main', 'master')
+        """
+        try:
+            repo = self.github.get_repo(f"{repo_owner}/{repo_name}")
+            return repo.default_branch
+        except GithubException as e:
+            self.logger.warning(f"Failed to fetch default branch from GitHub: {str(e)}")
+            return "main"  # Safe fallback
