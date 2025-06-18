@@ -146,9 +146,15 @@ class DocumentRetriever:
         if runtime not in runtime_to_url_path:
             raise ValueError(f"Invalid runtime: {runtime}. Must be one of {list(runtime_to_url_path.keys())}")
 
+        # Map iac_tool to the correct tab parameter
+        iac_tool_to_tab = {
+            'cdk': 'awscdk',
+            'terraform': 'terraform'
+        }
+
         url = urljoin(self.BASE_URL, self.LAMBDA_DOCS_URL.format(
             runtime=runtime_to_url_path[runtime],
-            iac_tool=iac_tool
+            iac_tool=iac_tool_to_tab[iac_tool]
         ))
         content = self._get_page_content(url)
 
