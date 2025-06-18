@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone
 import requests
 from ddtrace import llmobs
+import dotenv
 
 from config import setup_logging, setup_openai_client
 from routers import health, instrument
@@ -16,6 +17,8 @@ def create_app():
     """Create and configure FastAPI application."""
     logger = setup_logging()
     client = setup_openai_client()
+
+    dotenv.load_dotenv()
 
     llmobs.LLMObs.enable(ml_app="dd-instrumenter-agent", agentless_enabled=True)
 
