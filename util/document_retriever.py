@@ -56,11 +56,12 @@ class DocumentRetriever:
             self.logger.error(f"Failed to fetch documentation from {url}: {str(e)}")
             return None
 
-    def _extract_main_content(self, soup: BeautifulSoup) -> Optional[DocSection]:
+    def _extract_main_content(self, soup: BeautifulSoup, url: str) -> Optional[DocSection]:
         """Extract content from the mainContent div.
 
         Args:
             soup: BeautifulSoup object of the page
+            url: The formatted URL used to fetch this documentation
 
         Returns:
             DocSection containing the parsed content, or None if mainContent not found
@@ -79,7 +80,7 @@ class DocumentRetriever:
         return DocSection(
             title=title_text,
             content=content,
-            url=urljoin(self.BASE_URL, self.LAMBDA_DOCS_URL)
+            url=url
         )
 
     def extract_main_content_from_html(self, main_content: BeautifulSoup) -> str:
@@ -156,7 +157,7 @@ class DocumentRetriever:
             return {}
 
         soup = BeautifulSoup(content, 'html.parser')
-        doc_section = self._extract_main_content(soup)
+        doc_section = self._extract_main_content(soup, url)
 
         if not doc_section:
             self.logger.error("Failed to parse documentation content")

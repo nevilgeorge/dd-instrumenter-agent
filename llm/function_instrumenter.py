@@ -18,6 +18,7 @@ class InstrumentationResult(BaseModel):
         default="datadog_lambda_instrumentation"
     )
     next_steps: List[str] = Field(description="List of steps required after instrumentation", default_factory=list)
+    docs_urls: List[str] = Field(description="List of documentation URLs used to generate this instrumentation", default_factory=list)
 
 class FunctionInstrumenter(BaseLLMClient):
     """Class responsible for instrumenting AWS Lambda functions with Datadog."""
@@ -69,6 +70,10 @@ class FunctionInstrumenter(BaseLLMClient):
                 raise ValueError("OpenAI returned empty response")
 
             result_dict = parse_json_response(result_text)
+
+            # Add the documentation URL to the result
+            if dd_documentation and hasattr(dd_documentation, 'url'):
+                result_dict['docs_urls'] = [dd_documentation.url]
 
             self.logger.info(f"Successfully instrumented {file_type} file with Datadog: {file_path}")
             return InstrumentationResult(**result_dict)

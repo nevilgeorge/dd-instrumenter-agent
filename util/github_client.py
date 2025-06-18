@@ -2,7 +2,7 @@ import logging
 import os
 import shutil
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from git import Repo
 from github import Github
@@ -150,6 +150,9 @@ class GithubClient:
         repo_name: str,
         branch_name: str,
         pr_description: PRDescription,
+        docs_urls: Optional[List[str]] = None,
+        runtime: Optional[str] = None,
+        next_steps: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Create a pull request using GitHub API.
@@ -159,6 +162,9 @@ class GithubClient:
             repo_name: GitHub repository name
             branch_name: Name of the source branch
             pr_description: Generated PR description
+            docs_urls: Optional list of documentation URLs used for instrumentation
+            runtime: Optional runtime information for documentation context
+            next_steps: Optional list of next steps to include in PR description
 
         Returns:
             Dictionary containing PR information
@@ -171,11 +177,29 @@ class GithubClient:
             repo = self.github.get_repo(f"{repo_owner}/{repo_name}")
             base_branch = repo.default_branch
 
-            # Format the PR body
-            pr_body = f"""{pr_description.description}
+            # Build documentation section if URLs are provided
+            docs_section = ""
+            if docs_urls:
+                docs_section = "\n\n## Documentation References\n"
+                docs_section += "The following Datadog documentation was used to generate this instrumentation. You can refer to these links for additional configuration options or customizations:\n\n"
 
-## Changes Made
-{chr(10).join(f"- {item}" for item in pr_description.summary)}
+                for url in docs_urls:
+                    # Create a descriptive link text
+                    link_text = f"AWS Lambda Instrumentation"
+                    if runtime:
+                        link_text += f" for {runtime.title()}"
+                    docs_section += f"- [{link_text}]({url})\n"
+
+            # Build next steps section if provided
+            next_steps_section = ""
+            if next_steps:
+                next_steps_section = f"""
+
+## Next Steps
+{chr(10).join(f"- {item}" for item in next_steps)}"""
+
+            # Format the PR body
+            pr_body = f"""{pr_description.description}{next_steps_section}{docs_section}
 
 ---
 *This PR was generated automatically by the DD Instrumenter Agent*"""
@@ -237,6 +261,7 @@ class GithubClient:
         instrumentation_result: InstrumentationResult,
         pr_generator: PRDescriptionGenerator,
         branch_name: Optional[str] = None,
+        runtime: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Complete workflow to generate a pull request with the given instrumentation changes.
@@ -248,6 +273,7 @@ class GithubClient:
             instrumentation_result: InstrumentationResult containing file changes and metadata
             pr_generator: PRDescriptionGenerator instance for creating descriptions
             branch_name: Optional custom branch name (auto-generated if not provided)
+            runtime: Optional runtime information for documentation context
 
         Returns:
             Dictionary containing PR information and status
@@ -289,7 +315,9 @@ class GithubClient:
             # Create pull request
             self.logger.debug("Creating pull request...")
             pr_info = self._create_pull_request(
-                repo_owner, repo_name, branch_name, pr_description
+                repo_owner, repo_name, branch_name, pr_description,
+                docs_urls=instrumentation_result.docs_urls, runtime=runtime,
+                next_steps=instrumentation_result.next_steps
             )
 
             return {

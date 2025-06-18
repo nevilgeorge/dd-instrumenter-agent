@@ -88,7 +88,8 @@ async def instrument(
                     repo_owner=repo_owner,
                     repo_name=repo_name,
                     instrumentation_result=instrumented_code,
-                    pr_generator=pr_generator
+                    pr_generator=pr_generator,
+                    runtime=analysis.runtime
                 )
                 logger.info(f"Pull request result {pr_result}")
 
